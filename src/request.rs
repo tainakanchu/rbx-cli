@@ -72,6 +72,10 @@ pub struct ExportOptions {
     /// device's current name (empty on a fresh device).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_name: Option<String>,
+    /// What to do with a track whose cues or beat grid changed on the
+    /// device since the last sync (e.g. cues saved on a player) when the
+    /// request would replace them.
+    pub on_device_changes: OnDeviceChanges,
 }
 
 impl Default for ExportOptions {
@@ -87,6 +91,7 @@ impl Default for ExportOptions {
             reuse_device_analysis: true,
             prune: true,
             device_name: None,
+            on_device_changes: OnDeviceChanges::Fail,
         }
     }
 }
@@ -141,6 +146,19 @@ pub enum ConvertFormat {
     Wav,
     Aiff,
     Mp3,
+}
+
+/// `options.onDeviceChanges`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub enum OnDeviceChanges {
+    /// Refuse the export with `conflict` (`cues_or_grid_changed_on_device`).
+    #[default]
+    Fail,
+    /// For each track whose analysis files changed on the device since the
+    /// last sync, keep the device's cue lists and beat grid (ignoring the
+    /// request's `cues` and `beatGrid` for it) and apply everything else.
+    KeepDevice,
 }
 
 #[derive(

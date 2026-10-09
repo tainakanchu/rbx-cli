@@ -557,6 +557,120 @@ fn absent_cues_keep_the_device_cues_and_an_empty_list_clears_them() {
     assert_eq!(verify.code, 0, "{:#}", verify.terminal());
 }
 
+/// Moves the first track's grid on the device, as a player's grid edit
+/// would, and returns the new first beat time.
+fn shift_grid_on_device(usb: &Path, data: &Value, by_ms: u32) -> u32 {
+    let path = usb
+        .join(
+            data["items"][0]["analysisDir"]
+                .as_str()
+                .unwrap()
+                .trim_start_matches('/'),
+        )
+        .join("ANLZ0000.DAT");
+    let file = rbl_anlz::Anlz::read(&path).unwrap();
+    let mut beats = file.beat_grid().unwrap();
+    for beat in &mut beats {
+        beat.time_ms += by_ms;
+    }
+    std::fs::write(&path, file.with_beat_grid(&beats)).unwrap();
+    beats[0].time_ms
+}
+
+#[test]
+fn keep_device_keeps_cues_and_grid_a_player_changed() {
+    let f = fixture(&[("kd.wav", 8.0, 122.0), ("ke.wav", 8.0, 126.0)]);
+    let request = |mode: &str, cues_ms: u32| {
+        json!({
+            "options": { "onDeviceChanges": mode },
+            "tracks": [
+                { "path": track(&f, "kd.wav"), "ref": "d", "title": "D",
+                  "cues": [{ "type": "hot", "slot": "A", "timeMs": cues_ms }] },
+                { "path": track(&f, "ke.wav"), "ref": "e", "title": "E",
+                  "cues": [{ "type": "hot", "slot": "A", "timeMs": cues_ms }] }
+            ]
+        })
+    };
+    let first = export(&f, &request("fail", 1000));
+    assert_eq!(first.code, 0, "{:#}", first.terminal());
+    assert_eq!(first.data()["tracks"]["deviceChangesKept"], 0);
+
+    // A player saves a memory cue on the first track and moves its grid.
+    add_memory_cue_on_device(&f.usb, first.data(), 3000);
+    let first_beat = shift_grid_on_device(&f.usb, first.data(), 7);
+
+    // The default still refuses.
+    let refused = export(&f, &request("fail", 2000));
+    assert_eq!(
+        refused.terminal()["code"],
+        "conflict",
+        "{:#}",
+        refused.terminal()
+    );
+
+    // A dry run says what keepDevice would do.
+    let planned = run(
+        &[
+            "usb",
+            "export",
+            "--json",
+            "--dry-run",
+            "--to",
+            f.usb.to_str().unwrap(),
+            "--cache-dir",
+            f.cache.to_str().unwrap(),
+        ],
+        Some(&request("keepDevice", 2000).to_string()),
+    );
+    assert_eq!(planned.data()["items"][0]["deviceChangesKept"], true);
+    assert_eq!(planned.data()["items"][1]["deviceChangesKept"], false);
+
+    // keepDevice: the edited track keeps the device's cues and grid, the
+    // other one takes the request's cues.
+    let kept = export(&f, &request("keepDevice", 2000));
+    assert_eq!(kept.code, 0, "{:#}", kept.terminal());
+    let data = kept.data();
+    assert_eq!(data["tracks"]["deviceChangesKept"], 1);
+    assert_eq!(data["items"][0]["deviceChangesKept"], true);
+    assert_eq!(data["items"][0]["cuesOverride"], false);
+    assert!(!data["items"][0]["warnings"].as_array().unwrap().is_empty());
+    assert_eq!(data["items"][1]["deviceChangesKept"], false);
+    assert_eq!(data["items"][1]["cuesOverride"], true);
+    let times = |index: usize| -> Vec<u32> {
+        anlz(&f.usb, data, index, "EXT")
+            .cue_entries()
+            .iter()
+            .map(|e| e.time_ms)
+            .collect()
+    };
+    let device_cues = times(0);
+    assert!(
+        device_cues.contains(&1000) && device_cues.contains(&3000) && !device_cues.contains(&2000),
+        "{device_cues:?}"
+    );
+    assert_eq!(times(1), vec![2000]);
+    assert_eq!(
+        anlz(&f.usb, data, 0, "DAT").beat_grid().unwrap()[0].time_ms,
+        first_beat,
+        "the device's grid is kept"
+    );
+    let verify = run(&["usb", "verify", "--json", f.usb.to_str().unwrap()], None);
+    assert_eq!(verify.code, 0, "{:#}", verify.terminal());
+
+    // Nothing changed on the device since: the request's cues apply again.
+    let again = export(&f, &request("keepDevice", 2000));
+    assert_eq!(again.code, 0, "{:#}", again.terminal());
+    assert_eq!(again.data()["tracks"]["deviceChangesKept"], 0);
+    assert_eq!(
+        anlz(&f.usb, again.data(), 0, "EXT")
+            .cue_entries()
+            .iter()
+            .map(|e| e.time_ms)
+            .collect::<Vec<_>>(),
+        vec![2000]
+    );
+}
+
 #[test]
 fn a_missing_source_the_device_holds_is_a_source_unavailable_conflict() {
     let f = fixture(&[("m1.wav", 6.0, 120.0), ("m2.wav", 6.0, 124.0)]);

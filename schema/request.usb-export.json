@@ -23,6 +23,7 @@
         },
         "analyze": "missing",
         "embeddedArtwork": true,
+        "onDeviceChanges": "fail",
         "prune": true,
         "readTags": true,
         "reuseDeviceAnalysis": true,
@@ -313,6 +314,11 @@
           "type": "boolean",
           "default": true
         },
+        "onDeviceChanges": {
+          "description": "What to do with a track whose cues or beat grid changed on the\ndevice since the last sync (e.g. cues saved on a player) when the\nrequest would replace them.",
+          "$ref": "#/$defs/OnDeviceChanges",
+          "default": "fail"
+        },
         "prune": {
           "description": "Remove tracks an earlier export put on the device that this request\nno longer lists. With `false` they stay on the device, outside any\nplaylist. Playlists absent from the request are always removed.",
           "type": "boolean",
@@ -334,6 +340,21 @@
           "default": "auto"
         }
       }
+    },
+    "OnDeviceChanges": {
+      "description": "`options.onDeviceChanges`.",
+      "oneOf": [
+        {
+          "description": "Refuse the export with `conflict` (`cues_or_grid_changed_on_device`).",
+          "type": "string",
+          "const": "fail"
+        },
+        {
+          "description": "For each track whose analysis files changed on the device since the\nlast sync, keep the device's cue lists and beat grid (ignoring the\nrequest's `cues` and `beatGrid` for it) and apply everything else.",
+          "type": "string",
+          "const": "keepDevice"
+        }
+      ]
     },
     "PlaylistInput": {
       "description": "A playlist or a folder.",

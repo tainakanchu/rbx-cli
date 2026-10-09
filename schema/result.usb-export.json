@@ -308,6 +308,12 @@
           "format": "uint",
           "minimum": 0
         },
+        "deviceChangesKept": {
+          "description": "Tracks whose device cues and grid were kept\n(`onDeviceChanges: keepDevice`; see `items[].deviceChangesKept`).",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
         "exported": {
           "description": "Tracks in the written databases (includes kept and device-only ones).",
           "type": "integer",
@@ -349,7 +355,8 @@
         "reused",
         "skipped",
         "removed",
-        "kept"
+        "kept",
+        "deviceChangesKept"
       ]
     },
     "TrackResult": {
@@ -391,6 +398,10 @@
         },
         "cuesOverride": {
           "description": "The caller's cues were written (`cues` given).",
+          "type": "boolean"
+        },
+        "deviceChangesKept": {
+          "description": "`onDeviceChanges: keepDevice`: the track's cues or grid had changed\non the device since the last sync, so the device's cue lists and\ngrid were kept and the request's `cues`/`beatGrid` ignored for it\n(with `--dry-run`: would be).",
           "type": "boolean"
         },
         "deviceId": {
@@ -446,6 +457,7 @@
         "analysis",
         "gridOverride",
         "cuesOverride",
+        "deviceChangesKept",
         "artwork",
         "warnings"
       ]

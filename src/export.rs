@@ -22,7 +22,7 @@ use crate::device::{self, AnalysisIndex, IndexedAnalysis};
 use crate::error::{CliError, CliResult};
 use crate::output;
 use crate::protocol::{ErrorCode, ProgressItem};
-use crate::request::{AnalyzeMode, ExportRequest, RootPreference, TrackInput};
+use crate::request::{AnalyzeMode, ExportRequest, OnDeviceChanges, RootPreference, TrackInput};
 
 /// Command-line settings of one export.
 #[derive(Debug, Clone)]
@@ -103,6 +103,11 @@ pub struct TrackResult {
     pub grid_override: bool,
     /// The caller's cues were written (`cues` given).
     pub cues_override: bool,
+    /// `onDeviceChanges: keepDevice`: the track's cues or grid had changed
+    /// on the device since the last sync, so the device's cue lists and
+    /// grid were kept and the request's `cues`/`beatGrid` ignored for it
+    /// (with `--dry-run`: would be).
+    pub device_changes_kept: bool,
     pub artwork: bool,
     /// The id players see (`export.pdb`/`exportLibrary.db`), stable across syncs.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -131,6 +136,9 @@ pub struct TrackCounts {
     pub removed: usize,
     /// Tracks kept on the device although not requested (`prune: false`).
     pub kept: usize,
+    /// Tracks whose device cues and grid were kept
+    /// (`onDeviceChanges: keepDevice`; see `items[].deviceChangesKept`).
+    pub device_changes_kept: usize,
 }
 
 #[derive(Debug, Clone, Default, Serialize, JsonSchema)]
@@ -488,6 +496,8 @@ fn normalize_key(key: &str) -> String {
 struct Built {
     tracks: Vec<rbl_export::SourceTrack>,
     grid_override: Vec<bool>,
+    /// The device's cues and grid were kept (`onDeviceChanges: keepDevice`).
+    device_kept: Vec<bool>,
     warnings: Vec<Vec<String>>,
 }
 
@@ -504,6 +514,7 @@ fn build_tracks(
     let mut built = Built {
         tracks: Vec::new(),
         grid_override: Vec::new(),
+        device_kept: Vec::new(),
         warnings: Vec::new(),
     };
     for (index, (track, prep)) in request.tracks.iter().zip(prepared.iter_mut()).enumerate() {
@@ -512,6 +523,7 @@ fn build_tracks(
         let meta = prep.meta.clone();
         let key = track_key(track, &prep.source);
         let previous = manifest_entry(manifest, &key);
+        let keep_device = keeps_device_changes(options.on_device_changes, destination, previous);
 
         let mut analysis = std::mem::take(&mut prep.analysis);
         let duration_ms = track
@@ -527,7 +539,9 @@ fn build_tracks(
         // The caller's grid replaces the analysed one; waveforms stay.
         let mut grid_override = false;
         let mut grid_bpm = None;
-        if let Some(grid) = &track.beat_grid {
+        if track.beat_grid.is_some() && keep_device {
+            warnings.push(KEPT_GRID.into());
+        } else if let Some(grid) = &track.beat_grid {
             if analysis.iter().any(|(e, _)| e == "DAT") {
                 match crate::grid::expand(grid, duration_ms) {
                     Ok(beats) if !beats.is_empty() => {
@@ -550,6 +564,21 @@ fn build_tracks(
         // device holds for this track, in the analysis files as in
         // exportLibrary.db (which rbl-export preserves on its own).
         let cues = match &track.cues {
+            _ if keep_device => {
+                // The device's cue lists and grid, into the new files.
+                let anlz_dir = previous.map(|p| p.anlz_dir.as_str()).unwrap_or_default();
+                let on_device = device::read_analysis(destination, anlz_dir);
+                if analysis.is_empty() {
+                    analysis = on_device;
+                } else {
+                    anlz::carry_device_edits(&mut analysis, &on_device)
+                        .map_err(|e| CliError::internal(format!("tracks[{index}]: {e}")))?;
+                }
+                if track.cues.is_some() {
+                    warnings.push(KEPT_CUES.into());
+                }
+                None
+            }
             Some(cues) => Some(
                 anlz::export_cues(cues)
                     .map_err(|e| CliError::invalid(format!("tracks[{index}].cues: {e}")))?,
@@ -642,9 +671,26 @@ fn build_tracks(
             my_tags: Vec::new(),
         });
         built.grid_override.push(grid_override);
+        built.device_kept.push(keep_device);
         built.warnings.push(warnings);
     }
     Ok(built)
+}
+
+const KEPT_CUES: &str =
+    "cues ignored: the device's cues or grid changed since the last sync and were kept (onDeviceChanges: keepDevice)";
+const KEPT_GRID: &str =
+    "beatGrid ignored: the device's cues or grid changed since the last sync and were kept (onDeviceChanges: keepDevice)";
+
+/// Whether this track keeps the device's cues and grid: `keepDevice`, and
+/// its analysis files on the device changed since the last sync.
+fn keeps_device_changes(
+    mode: OnDeviceChanges,
+    destination: &Path,
+    previous: Option<&rbl_export::ManifestTrack>,
+) -> bool {
+    mode == OnDeviceChanges::KeepDevice
+        && previous.is_some_and(|p| analysis_changed_on_device(destination, p))
 }
 
 /// `prune: false`: the tracks an earlier export wrote that this request
@@ -938,6 +984,13 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
     if args.dry_run {
         for (index, (track, prep)) in request.tracks.iter().zip(&prepared).enumerate() {
             let from = prep.from.unwrap_or(AnalysisSource::None);
+            let kept = prep.stamp.is_some()
+                && keeps_device_changes(
+                    options.on_device_changes,
+                    &destination,
+                    manifest_entry(manifest.as_ref(), &track_key(track, &prep.source)),
+                );
+            result.tracks.device_changes_kept += usize::from(kept);
             count_analysis(&mut result.analysis, from);
             result.tracks.skipped += usize::from(prep.stamp.is_none());
             result.items.push(TrackResult {
@@ -955,8 +1008,9 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
                 analysis: from,
                 analysis_ms: None,
                 audio: audio_plan[index],
-                grid_override: track.beat_grid.is_some(),
-                cues_override: track.cues.is_some(),
+                grid_override: track.beat_grid.is_some() && !kept,
+                cues_override: track.cues.is_some() && !kept,
+                device_changes_kept: kept,
                 artwork: track.artwork.is_some(),
                 device_id: None,
                 device_path: None,
@@ -1110,10 +1164,11 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
     // Record where each track's analysis came from, for the next export.
     let after = rbl_export::Manifest::load(&destination);
     let mut next_index = AnalysisIndex::default();
-    for (track, (prep, grid)) in request
+    for ((track, prep), (grid, kept)) in request
         .tracks
         .iter()
-        .zip(prepared.iter().zip(&built.grid_override))
+        .zip(&prepared)
+        .zip(built.grid_override.iter().zip(&built.device_kept))
     {
         let (Some(cache_key), Some(meta)) = (&prep.cache_key, &prep.meta) else {
             continue;
@@ -1126,7 +1181,8 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
                 track_key(track, &prep.source),
                 IndexedAnalysis {
                     cache_key: cache_key.clone(),
-                    grid_override: *grid,
+                    // A grid kept from the device is not the analysed one either.
+                    grid_override: *grid || *kept,
                     meta: meta.clone(),
                 },
             );
@@ -1162,7 +1218,8 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
             analysis_ms: prep.analysis_ms,
             audio: None,
             grid_override: built.grid_override[index],
-            cues_override: track.cues.is_some(),
+            cues_override: track.cues.is_some() && !built.device_kept[index],
+            device_changes_kept: built.device_kept[index],
             artwork: tracks[index].artwork.is_some(),
             device_id: written.map(|w| w.export_id),
             device_path: written.map(|w| w.audio.clone()),
@@ -1175,6 +1232,8 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
         result.analysis.cue_overrides +=
             usize::from(item.cues_override && item.status == TrackStatus::Exported);
         result.tracks.skipped += usize::from(item.status == TrackStatus::Skipped);
+        result.tracks.device_changes_kept +=
+            usize::from(item.device_changes_kept && item.status == TrackStatus::Exported);
         result.items.push(item);
     }
     result.tracks.exported = report.tracks;
@@ -1320,6 +1379,13 @@ pub fn human(result: &ExportResult) -> String {
             "  bytes:    {} to copy, {free} free",
             mb(result.bytes.to_copy)
         );
+        if t.device_changes_kept > 0 {
+            let _ = writeln!(
+                s,
+                "  {} track(s) keep the cues and grid changed on the device",
+                t.device_changes_kept
+            );
+        }
         let _ = writeln!(s, "  playlists: {}", result.playlists.written);
     } else {
         let _ = writeln!(s, "Exported to {} ({})", result.destination, result.root);
@@ -1328,6 +1394,13 @@ pub fn human(result: &ExportResult) -> String {
             "  tracks:    {} on device, {} copied, {} reused, {} removed, {} skipped, {} kept",
             t.exported, t.copied, t.reused, t.removed, t.skipped, t.kept
         );
+        if t.device_changes_kept > 0 {
+            let _ = writeln!(
+                s,
+                "  {} track(s) keep the cues and grid changed on the device",
+                t.device_changes_kept
+            );
+        }
         let _ = writeln!(
             s,
             "  playlists: {} ({} added, {} removed)",

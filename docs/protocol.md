@@ -128,7 +128,7 @@ A `conflict` error's `details` (schema `details.conflict.json`; capability
 
 | `reason` | Meaning | `tracks` |
 | --- | --- | --- |
-| `cues_or_grid_changed_on_device` | A track's analysis files on the device (cue lists or beat grid; rbxport does not say which) changed since the last sync, e.g. cues saved on a player, and the request replaces them. See [Cues](#cues). | Every listed track whose analysis files on the device differ from what the last sync wrote |
+| `cues_or_grid_changed_on_device` | A track's analysis files on the device (cue lists or beat grid; rbxport does not say which) changed since the last sync, e.g. cues saved on a player, and the request replaces them. See [Cues](#cues); `options.onDeviceChanges: "keepDevice"` keeps the device's instead. | Every listed track whose analysis files on the device differ from what the last sync wrote |
 | `onelibrary_cues_changed_on_device` | `exportLibrary.db` cue records changed on the device since the last sync, and the export would replace them | — |
 | `track_changed_on_device` | A track's metadata changed on the device (`database`, `name` = title) | Listed tracks with that title |
 | `playlist_changed_on_device` | A playlist changed on the device (`database`, `name`) | — |
@@ -203,7 +203,8 @@ are ignored; check `version` capabilities for features.
     "allowRekordboxRunning": false,
     "reuseDeviceAnalysis": true,
     "prune": true,
-    "deviceName": "DJ STICK"         // optional
+    "deviceName": "DJ STICK",        // optional
+    "onDeviceChanges": "fail"        // fail | keepDevice
   },
   "tracks": [
     {
@@ -272,6 +273,7 @@ derived from it). A track may be in several playlists or none.
 | `reuseDeviceAnalysis` | true | See caching. |
 | `prune` | true | `false` keeps tracks an earlier export wrote that the request no longer lists (outside any playlist; metadata as on the device). Playlists absent from the request are always removed. |
 | `deviceName` | — | The name players show (in `exportLibrary.db`). |
+| `onDeviceChanges` | `fail` | A track whose cues or beat grid changed on the device since the last sync (e.g. cues saved on a player). `fail`: the export is refused with `conflict` (`cues_or_grid_changed_on_device`) when the request would replace them. `keepDevice`: for each such track, the device's cue lists and grid are kept and its `cues`/`beatGrid` ignored (a `warnings` entry says so); everything else is applied. See [Cues](#cues). Capability `keep-device-changes`. |
 
 **Formats.** Every export writes both the Device Library (`export.pdb`, for
 older players) and Device Library Plus / OneLibrary (`exportLibrary.db`), as
@@ -284,7 +286,7 @@ content written by other software (e.g. rekordbox) are preserved.
 ```jsonc
 {
   "destination": "/Volumes/DJ STICK", "root": "PIONEER", "dryRun": false,
-  "tracks":   { "requested": 12, "exported": 12, "copied": 2, "reused": 10, "skipped": 0, "removed": 1, "kept": 0 },
+  "tracks":   { "requested": 12, "exported": 12, "copied": 2, "reused": 10, "skipped": 0, "removed": 1, "kept": 0, "deviceChangesKept": 0 },
   "playlists":{ "written": 4, "added": 1, "removed": 0 },
   "analysis": { "generated": 2, "cacheHits": 10, "deviceReuse": 0, "supplied": 0, "none": 0, "failed": 0,
                 "cacheMisses": 2, "gridOverrides": 1, "cueOverrides": 12 },
@@ -294,7 +296,7 @@ content written by other software (e.g. rekordbox) are preserved.
   "timings": { "planMs": 20, "analyzeMs": 1400, "exportMs": 2100, "verifyMs": 280, "totalMs": 3800 },
   "items": [
     { "index": 0, "ref": "a", "title": "…", "status": "exported", "analysis": "cache",
-      "gridOverride": false, "cuesOverride": true, "artwork": true,
+      "gridOverride": false, "cuesOverride": true, "deviceChangesKept": false, "artwork": true,
       "deviceId": 1, "devicePath": "/Contents/Artist/Album/a.flac",
       "analysisDir": "/PIONEER/USBANLZ/P051/0001470B", "analysisMs": 640, "warnings": [] }
   ]
@@ -304,6 +306,9 @@ content written by other software (e.g. rekordbox) are preserved.
 `items[].analysis`: `cache`, `generated`, `device`, `supplied`, `none`,
 `failed` (exported without analysis; see `warnings`), and with `--dry-run`
 `generate`. `status`: `exported`, `skipped`, or `planned` (`--dry-run`).
+`items[].deviceChangesKept` (count: `tracks.deviceChangesKept`): with
+`onDeviceChanges: keepDevice`, the track's device cues and grid were kept
+(with `--dry-run`: would be); `gridOverride`/`cuesOverride` are then false.
 After the export both databases are read back (as rbxport does); a mismatch
 is a `verification_failed` error rather than a result.
 
@@ -401,7 +406,20 @@ on OneLibrary players, possibly `exportLibrary.db`). On the next export:
   the tracks whose analysis changed on the device) and changes nothing.
   Read them with `usb inspect --cues`, merge them into the caller's data,
   and export again with the merged list (sending exactly what the device
-  holds is always accepted).
+  holds is always accepted);
+- with `options.onDeviceChanges: "keepDevice"`, a track whose analysis
+  files on the device changed since the last sync keeps the device's cue
+  lists **and** beat grid (`PCOB`/`PCO2`, `PQTZ`/`PQT2`; waveforms and
+  everything else come from the cache as usual) and its `cues`/`beatGrid`
+  are ignored; `exportLibrary.db`'s cue rows for it are preserved too.
+  Other tracks get the request's cues, and the export succeeds. "Changed"
+  means a file differs from what the last sync wrote (rbl-export records a
+  hash of each), so the device wins only for this sync: once written, the
+  next sync applies the request's `cues`/`beatGrid` (or the analysed grid)
+  again unless the device changes again. Import what you want to keep
+  (`usb inspect --cues`) before then. Only these analysis changes are
+  covered: every other conflict (including cue rows changed only in
+  `exportLibrary.db`, `onelibrary_cues_changed_on_device`) still fails.
 
 ## Beat grids
 
@@ -459,8 +477,9 @@ list` shows (never forced; any other path is `not_found`) →
 Capabilities are stable strings (`usb.export`, `usb.export.cues`,
 `usb.export.beatGrid.anchors`, `usb.export.analysisCache`, …); test for them
 rather than comparing versions. Added in 0.1.1: `conflict-reasons`
-(`details.reason` on `conflict` errors) and `usb.export.stdinEofCancel`
-(`--cancel-on-stdin-eof`).
+(`details.reason` on `conflict` errors), `usb.export.stdinEofCancel`
+(`--cancel-on-stdin-eof`) and `keep-device-changes`
+(`options.onDeviceChanges`).
 
 ## Versioning policy
 

@@ -35,6 +35,7 @@ pub const CAPABILITIES: &[&str] = &[
     "devices.list",
     "devices.eject",
     "conflict-reasons",
+    "keep-device-changes",
 ];
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

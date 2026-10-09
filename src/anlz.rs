@@ -111,6 +111,52 @@ pub fn carry_cues(files: &mut [AnalysisFile], device: &[AnalysisFile]) -> Result
     Ok(carried)
 }
 
+/// The sections a player edits when a DJ saves cues or adjusts the grid:
+/// the cue lists (`PCOB`, `PCO2`), the beat grid (`PQTZ`) and the extended
+/// grid that describes its beats (`PQT2`).
+fn is_device_edit(section: &Section) -> bool {
+    section.is_cue_list() || matches!(&section.tag.0, b"PQTZ" | b"PQT2")
+}
+
+/// Puts the device's cue lists **and** beat grid (see [`is_device_edit`])
+/// into `files`, extension by extension, in the device's order and where
+/// `files` had its own (appended when it had none); every other section,
+/// waveforms included, stays as it was. A file the device lacks is left
+/// alone. Returns whether anything was carried.
+pub fn carry_device_edits(
+    files: &mut [AnalysisFile],
+    device: &[AnalysisFile],
+) -> Result<bool, String> {
+    let mut carried = false;
+    for (extension, bytes) in files.iter_mut() {
+        let Some((_, from)) = device
+            .iter()
+            .find(|(e, _)| e.eq_ignore_ascii_case(extension))
+        else {
+            continue;
+        };
+        let Ok(from) = rbl_anlz::parse(from) else {
+            continue;
+        };
+        let edits: Vec<Section> = from.sections.into_iter().filter(is_device_edit).collect();
+        if edits.is_empty() {
+            continue;
+        }
+        let mut parsed = parse(bytes)?;
+        let at = parsed
+            .sections
+            .iter()
+            .position(is_device_edit)
+            .unwrap_or(parsed.sections.len());
+        // Every section before `at` stays, so `at` is still the place.
+        parsed.sections.retain(|s| !is_device_edit(s));
+        parsed.sections.splice(at..at, edits);
+        *bytes = parsed.to_bytes();
+        carried = true;
+    }
+    Ok(carried)
+}
+
 #[allow(
     clippy::cast_possible_truncation,
     clippy::cast_sign_loss,
@@ -227,6 +273,52 @@ mod tests {
         let mut carried = clean.clone();
         assert!(carry_cues(&mut carried, &with_cues).unwrap());
         assert_eq!(carried, with_cues);
+    }
+
+    #[test]
+    fn device_edits_carry_cues_and_grid_and_keep_the_waveforms() {
+        let ours = authored();
+        // The device's copy: another grid, a cue.
+        let mut device = ours.clone();
+        let grid = [Beat {
+            beat_number: 1,
+            tempo_x100: 12500,
+            time_ms: 42,
+        }];
+        replace_grid(&mut device, &grid).unwrap();
+        let cue = ExportCue {
+            kind: 0,
+            time_ms: 4321,
+            ..ExportCue::default()
+        };
+        for (extension, bytes) in &mut device {
+            if extension == "DAT" || extension == "EXT" {
+                let lists =
+                    rbl_anlz::cues::sections(std::slice::from_ref(&cue), extension == "EXT");
+                *bytes = with_cue_lists(bytes, lists).unwrap();
+            }
+        }
+        let mut files = ours.clone();
+        assert!(carry_device_edits(&mut files, &device).unwrap());
+        assert_eq!(grid_of(&files).unwrap(), grid.to_vec());
+        let edits = |files: &[AnalysisFile], i: usize| -> Vec<Section> {
+            rbl_anlz::parse(&files[i].1)
+                .unwrap()
+                .sections
+                .into_iter()
+                .filter(is_device_edit)
+                .collect()
+        };
+        for i in 0..files.len() {
+            assert_eq!(edits(&files, i), edits(&device, i), "file {i}");
+        }
+        let dat = rbl_anlz::parse(&files[0].1).unwrap();
+        let old = rbl_anlz::parse(&ours[0].1).unwrap();
+        assert_eq!(dat.waveform(b"PWAV"), old.waveform(b"PWAV"));
+        assert_eq!(
+            rbl_anlz::parse(&files[1].1).unwrap().cue_entries()[0].time_ms,
+            4321
+        );
     }
 
     #[test]
