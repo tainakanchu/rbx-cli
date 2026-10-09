@@ -104,7 +104,7 @@ optional `details`.
 | `invalid_request` | The request is malformed or inconsistent (message names the field) |
 | `unsupported` | The request's `protocol` is newer than this CLI's |
 | `not_found` | A path or device does not exist |
-| `conflict` | The device's library conflicts with the request; nothing was changed. `details.reason` says why (see [Conflict reasons](#conflict-reasons)) |
+| `conflict` | The device's library conflicts with the request; nothing was changed. `details.reason` says why (see [Conflict reasons](#usb.export.conflictReasons)) |
 | `device_gone` | The device disappeared while being written |
 | `rekordbox_running` | rekordbox is running (it may write the same device); set `options.allowRekordboxRunning` to override |
 | `insufficient_space` | The filesystem holding the destination has less free space than the audio to copy (`details.freeBytes`, `details.bytesToCopy`) |
@@ -116,7 +116,7 @@ optional `details`.
 ### Conflict reasons
 
 A `conflict` error's `details` (schema `details.conflict.json`; capability
-`conflict-reasons`) tells conflicts apart without reading `message`:
+`usb.export.conflictReasons`) tells conflicts apart without reading `message`:
 
 | Field | |
 | --- | --- |
@@ -273,7 +273,7 @@ derived from it). A track may be in several playlists or none.
 | `reuseDeviceAnalysis` | true | See caching. |
 | `prune` | true | `false` keeps tracks an earlier export wrote that the request no longer lists (outside any playlist; metadata as on the device). Playlists absent from the request are always removed. |
 | `deviceName` | — | The name players show (in `exportLibrary.db`). |
-| `onDeviceChanges` | `fail` | A track whose cues or beat grid changed on the device since the last sync (e.g. cues saved on a player). `fail`: the export is refused with `conflict` (`cues_or_grid_changed_on_device`) when the request would replace them. `keepDevice`: for each such track, the device's cue lists and grid are kept and its `cues`/`beatGrid` ignored (a `warnings` entry says so); everything else is applied. See [Cues](#cues). Capability `keep-device-changes`. |
+| `onDeviceChanges` | `fail` | A track whose cues or beat grid changed on the device since the last sync (e.g. cues saved on a player). `fail`: the export is refused with `conflict` (`cues_or_grid_changed_on_device`) when the request would replace them. `keepDevice`: for each such track, the device's cue lists and grid are kept and its `cues`/`beatGrid` ignored (a `warnings` entry says so); everything else is applied. See [Cues](#cues). Capability `usb.export.keepDeviceChanges`. |
 
 **Formats.** Every export writes both the Device Library (`export.pdb`, for
 older players) and Device Library Plus / OneLibrary (`exportLibrary.db`), as
@@ -476,9 +476,9 @@ list` shows (never forced; any other path is `not_found`) →
 `{ name, version, protocol, rbxportRev, rbxportRepository, capabilities: [..], target }`.
 Capabilities are stable strings (`usb.export`, `usb.export.cues`,
 `usb.export.beatGrid.anchors`, `usb.export.analysisCache`, …); test for them
-rather than comparing versions. Added in 0.1.1: `conflict-reasons`
+rather than comparing versions. Added in 0.1.1: `usb.export.conflictReasons`
 (`details.reason` on `conflict` errors), `usb.export.stdinEofCancel`
-(`--cancel-on-stdin-eof`) and `keep-device-changes`
+(`--cancel-on-stdin-eof`) and `usb.export.keepDeviceChanges`
 (`options.onDeviceChanges`).
 
 ## Versioning policy
