@@ -67,6 +67,14 @@ impl From<rbl_export::ExportError> for CliError {
             E::Io(_) => ErrorCode::Io,
             E::OneLibrary(_) => ErrorCode::Internal,
         };
-        Self::new(code, error.to_string())
+        let details = match &error {
+            E::Conflict(message) => Some(crate::conflict::classify(message).to_value()),
+            _ => None,
+        };
+        Self {
+            code,
+            message: error.to_string(),
+            details,
+        }
     }
 }

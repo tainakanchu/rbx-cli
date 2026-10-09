@@ -19,6 +19,10 @@ pub fn all() -> Vec<(&'static str, String)> {
             render(schema_for!(crate::protocol::Message)),
         ),
         (
+            "details.conflict.json",
+            render(schema_for!(crate::conflict::ConflictDetails)),
+        ),
+        (
             "request.usb-export.json",
             render(schema_for!(crate::request::ExportRequest)),
         ),

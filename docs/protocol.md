@@ -104,7 +104,7 @@ optional `details`.
 | `invalid_request` | The request is malformed or inconsistent (message names the field) |
 | `unsupported` | The request's `protocol` is newer than this CLI's |
 | `not_found` | A path or device does not exist |
-| `conflict` | The device's library conflicts with the request; nothing was changed (see message: e.g. cues or grids changed on the device, a library from a different source, both `PIONEER` and `.PIONEER`) |
+| `conflict` | The device's library conflicts with the request; nothing was changed. `details.reason` says why (see [Conflict reasons](#conflict-reasons)) |
 | `device_gone` | The device disappeared while being written |
 | `rekordbox_running` | rekordbox is running (it may write the same device); set `options.allowRekordboxRunning` to override |
 | `insufficient_space` | The volume has less free space than the audio to copy (`details.freeBytes`, `details.bytesToCopy`) |
@@ -112,6 +112,50 @@ optional `details`.
 | `cancelled` | SIGINT/SIGTERM/SIGHUP, Ctrl+C/Ctrl+Break, or a `cancel` line |
 | `io` | Other I/O errors |
 | `internal` | Anything else (including `exportLibrary.db` failures) |
+
+### Conflict reasons
+
+A `conflict` error's `details` (schema `details.conflict.json`; capability
+`conflict-reasons`) tells conflicts apart without reading `message`:
+
+| Field | |
+| --- | --- |
+| `reason` | Always present; one of the strings below. New reasons may be added: treat an unknown one as `other`. |
+| `database` | `deviceLibrary` (`export.pdb`) or `oneLibrary` (`exportLibrary.db`), when the conflict is about one |
+| `name` | The track title, playlist or My Tag name rbxport named, when it named one |
+| `deviceTrackId` | The device track id rbxport named, when it named one |
+| `tracks` | `usb export` only, when rbx-cli can tell: request tracks concerned, each `{ index, ref, deviceId }` (`ref`/`deviceId` null when unknown) |
+
+| `reason` | Meaning | `tracks` |
+| --- | --- | --- |
+| `cues_or_grid_changed_on_device` | A track's analysis files on the device (cue lists or beat grid; rbxport does not say which) changed since the last sync, e.g. cues saved on a player, and the request replaces them. See [Cues](#cues). | Every listed track whose analysis files on the device differ from what the last sync wrote |
+| `onelibrary_cues_changed_on_device` | `exportLibrary.db` cue records changed on the device since the last sync, and the export would replace them | — |
+| `track_changed_on_device` | A track's metadata changed on the device (`database`, `name` = title) | Listed tracks with that title |
+| `playlist_changed_on_device` | A playlist changed on the device (`database`, `name`) | — |
+| `my_tags_changed_on_device` | A My Tag (`name`) or a track's My Tags (`deviceTrackId`) changed on the device | — |
+| `deleted_on_device` | Tracks or playlists were deleted on the device since the last sync (`database`) | — |
+| `device_only_track` | A track only the device has would be lost (`database`, `name`) | — |
+| `device_only_playlist` | A playlist only the device has would be lost (`name`) | — |
+| `history_references_track` | A track being removed is still in the device's history | — |
+| `source_unavailable` | A track an earlier export put on the device has no readable source (missing, or gone while copying; `name` = the first one's title) | Every listed track the device holds whose source is not a file |
+| `ownership` | The device belongs to a different (or older, unverified) library | — |
+| `identities_changed` | rekordbox changed the device's track identities | — |
+| `libraries_disagree` | The device's two existing libraries disagree | — |
+| `both_roots` | Both `PIONEER` and `.PIONEER` hold a library | — |
+| `unreadable_library` | A device database cannot be read or fails its integrity check (`database`) | — |
+| `unsupported_onelibrary` | `exportLibrary.db` has a schema version rbxport does not support | — |
+| `device_changed_during_sync` | Another program changed the device while the export was staging | — |
+| `staged_verification_failed` | The staged generation did not verify before publication | — |
+| `invalid_device_path` | A device library path is invalid or points outside the device | — |
+| `inconsistent_device_library` | A device playlist or the history references a track or folder the device library lacks (`deviceTrackId` when named) | — |
+| `inconsistent_request` | The tracks/playlists given to rbl-export are inconsistent (duplicate ids or audio paths, a missing parent folder) | — |
+| `other` | Anything else | — |
+
+rbl-export reports conflicts as text only, so rbx-cli derives `reason`,
+`database`, `name` and `deviceTrackId` by matching rbxport's messages (at
+the pinned revision) in one place (`src/conflict.rs`, with a test per
+message); `tracks` is worked out by rbx-cli from the request, the device's
+sync manifest and the files. `message` keeps rbxport's text.
 
 ## Cancellation
 
@@ -194,7 +238,8 @@ rbxport does (decks cache artwork and waveforms by it).
 
 **Missing files** are skipped (`track.skipped` event, `status: "skipped"`),
 unless an earlier export put the track on the device: then the export is
-refused with `conflict` and the device is untouched (rbxport never deletes a
+refused with `conflict` (`details.reason`: `source_unavailable`,
+`details.tracks`: those tracks) and the device is untouched (rbxport never deletes a
 good device copy because the source went offline).
 
 ### Playlists
@@ -337,8 +382,9 @@ on OneLibrary players, possibly `exportLibrary.db`). On the next export:
 - with `cues` **absent**, those cues are kept (the device's cue lists are
   carried over), so a routine sync does not lose them;
 - with `cues` **given**, and the device's cues (or grid) changed since the
-  last export, rbl-export refuses the whole export with `conflict` ("USB
-  cues or beat grids changed since the last sync…") and changes nothing.
+  last export, rbl-export refuses the whole export with `conflict`
+  (`details.reason`: `cues_or_grid_changed_on_device`, `details.tracks`:
+  the tracks whose analysis changed on the device) and changes nothing.
   Read them with `usb inspect --cues`, merge them into the caller's data,
   and export again with the merged list (sending exactly what the device
   holds is always accepted).
@@ -398,7 +444,8 @@ list` shows (never forced; any other path is `not_found`) →
 `{ name, version, protocol, rbxportRev, rbxportRepository, capabilities: [..], target }`.
 Capabilities are stable strings (`usb.export`, `usb.export.cues`,
 `usb.export.beatGrid.anchors`, `usb.export.analysisCache`, …); test for them
-rather than comparing versions.
+rather than comparing versions. Added in 0.1.1: `conflict-reasons`
+(`details.reason` on `conflict` errors).
 
 ## Versioning policy
 

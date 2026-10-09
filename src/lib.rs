@@ -9,6 +9,7 @@ pub mod artwork;
 pub mod cache;
 pub mod cancel;
 pub mod cli;
+pub mod conflict;
 pub mod device;
 pub mod devices;
 pub mod error;

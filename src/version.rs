@@ -33,6 +33,7 @@ pub const CAPABILITIES: &[&str] = &[
     "usb.verify",
     "devices.list",
     "devices.eject",
+    "conflict-reasons",
 ];
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

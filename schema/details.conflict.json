@@ -1,0 +1,212 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ConflictDetails",
+  "description": "`details` of a `conflict` error.",
+  "type": "object",
+  "properties": {
+    "database": {
+      "description": "The database rbxport named, when it named one.",
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Database"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "deviceTrackId": {
+      "description": "The device track id rbxport named, when it named one.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0
+    },
+    "name": {
+      "description": "The track title, playlist or My Tag name rbxport named, when it\nnamed one.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "reason": {
+      "$ref": "#/$defs/ConflictReason"
+    },
+    "tracks": {
+      "description": "Request tracks concerned, when rbx-cli can tell (`usb export` only):\nfor `source_unavailable`, every listed track the device holds whose\nsource is not readable; for `cues_or_grid_changed_on_device`, every\nlisted track whose analysis files on the device changed since the\nlast sync; for `track_changed_on_device`, the listed tracks with the\ntitle rbxport named.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/ConflictTrack"
+      }
+    }
+  },
+  "required": [
+    "reason",
+    "tracks"
+  ],
+  "$defs": {
+    "ConflictReason": {
+      "description": "Why the device's library conflicts with the request. Stable snake_case\nstrings; new reasons may be added, so treat unknown ones as `other`.",
+      "oneOf": [
+        {
+          "description": "A track's analysis files on the device (cue lists or beat grid)\nchanged since the last sync, e.g. cues saved on a player, and the\nrequest would replace them. rbxport does not say which of the two.",
+          "type": "string",
+          "const": "cues_or_grid_changed_on_device"
+        },
+        {
+          "description": "`exportLibrary.db` holds cue records changed on the device since the\nlast sync that this export would replace.",
+          "type": "string",
+          "const": "onelibrary_cues_changed_on_device"
+        },
+        {
+          "description": "A track's metadata changed on the device since the last sync.",
+          "type": "string",
+          "const": "track_changed_on_device"
+        },
+        {
+          "description": "A playlist changed on the device since the last sync.",
+          "type": "string",
+          "const": "playlist_changed_on_device"
+        },
+        {
+          "description": "My Tags (or a track's My Tags) changed on the device.",
+          "type": "string",
+          "const": "my_tags_changed_on_device"
+        },
+        {
+          "description": "Tracks or playlists were deleted on the device since the last sync.",
+          "type": "string",
+          "const": "deleted_on_device"
+        },
+        {
+          "description": "A track only the device has (not from an earlier sync) would be lost.",
+          "type": "string",
+          "const": "device_only_track"
+        },
+        {
+          "description": "A playlist only the device has would be lost.",
+          "type": "string",
+          "const": "device_only_playlist"
+        },
+        {
+          "description": "A track being removed is still referenced by the device's history.",
+          "type": "string",
+          "const": "history_references_track"
+        },
+        {
+          "description": "A track an earlier export put on the device has no readable source\n(missing, or it disappeared while being copied).",
+          "type": "string",
+          "const": "source_unavailable"
+        },
+        {
+          "description": "The device belongs to a different (or older, unverified) library.",
+          "type": "string",
+          "const": "ownership"
+        },
+        {
+          "description": "rekordbox changed the device's track identities since the last sync.",
+          "type": "string",
+          "const": "identities_changed"
+        },
+        {
+          "description": "The device's two existing libraries (`export.pdb`,\n`exportLibrary.db`) disagree.",
+          "type": "string",
+          "const": "libraries_disagree"
+        },
+        {
+          "description": "Both `PIONEER` and `.PIONEER` hold a library.",
+          "type": "string",
+          "const": "both_roots"
+        },
+        {
+          "description": "A device database cannot be read or fails its integrity check.",
+          "type": "string",
+          "const": "unreadable_library"
+        },
+        {
+          "description": "`exportLibrary.db` has a schema version rbxport does not support.",
+          "type": "string",
+          "const": "unsupported_onelibrary"
+        },
+        {
+          "description": "Another program changed the device while the export was staging.",
+          "type": "string",
+          "const": "device_changed_during_sync"
+        },
+        {
+          "description": "The staged export did not verify before publication.",
+          "type": "string",
+          "const": "staged_verification_failed"
+        },
+        {
+          "description": "A device library path is invalid or points outside the device.",
+          "type": "string",
+          "const": "invalid_device_path"
+        },
+        {
+          "description": "The device library is internally inconsistent (a playlist or the\nhistory references a track or folder it does not have).",
+          "type": "string",
+          "const": "inconsistent_device_library"
+        },
+        {
+          "description": "The tracks/playlists handed to rbl-export are inconsistent\n(duplicate ids or paths, a missing parent folder).",
+          "type": "string",
+          "const": "inconsistent_request"
+        },
+        {
+          "description": "Anything not recognised above.",
+          "type": "string",
+          "const": "other"
+        }
+      ]
+    },
+    "ConflictTrack": {
+      "description": "A request track a conflict concerns.",
+      "type": "object",
+      "properties": {
+        "deviceId": {
+          "description": "The track's id on the device (from the last sync), when known.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "index": {
+          "description": "Zero-based index into the request's `tracks`.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "ref": {
+          "description": "The track's `ref` from the request, when it had one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "index"
+      ]
+    },
+    "Database": {
+      "description": "Which of the device's databases a conflict is about.",
+      "oneOf": [
+        {
+          "description": "`export.pdb`.",
+          "type": "string",
+          "const": "deviceLibrary"
+        },
+        {
+          "description": "`exportLibrary.db`.",
+          "type": "string",
+          "const": "oneLibrary"
+        }
+      ]
+    }
+  }
+}

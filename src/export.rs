@@ -1051,7 +1051,18 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
         },
         &crate::cancel::requested,
     )
-    .map_err(CliError::from)?;
+    .map_err(|e| {
+        conflict_error(
+            e,
+            &ConflictContext {
+                request: &request,
+                prepared: &prepared,
+                titles: &tracks,
+                manifest: manifest.as_ref(),
+                destination: &destination,
+            },
+        )
+    })?;
     result.timings.export_ms = elapsed_ms(export_started);
 
     // The device name, on a device that already had a library.
@@ -1177,6 +1188,81 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
     result.verified = Some(verified);
     result.timings.total_ms = elapsed_ms(started);
     Ok(result)
+}
+
+/// What a failed export knows about the request, to name the tracks a
+/// conflict concerns.
+struct ConflictContext<'a> {
+    request: &'a ExportRequest,
+    prepared: &'a [Prepared],
+    /// The tracks handed to rbl-export (request tracks first).
+    titles: &'a [rbl_export::SourceTrack],
+    manifest: Option<&'a rbl_export::Manifest>,
+    destination: &'a Path,
+}
+
+/// An rbl-export error, with the request tracks a conflict concerns added
+/// to its `details` when rbx-cli can tell which they are.
+fn conflict_error(error: rbl_export::ExportError, ctx: &ConflictContext<'_>) -> CliError {
+    use crate::conflict::{ConflictReason as R, ConflictTrack};
+    let rbl_export::ExportError::Conflict(message) = &error else {
+        return CliError::from(error);
+    };
+    let mut details = crate::conflict::classify(message);
+    let entry = |index: usize| {
+        let track = &ctx.request.tracks[index];
+        manifest_entry(ctx.manifest, &track_key(track, &ctx.prepared[index].source))
+    };
+    let concerned = |index: usize| ConflictTrack {
+        index,
+        reference: ctx.request.tracks[index].reference.clone(),
+        device_id: entry(index).map(|e| e.export_id),
+    };
+    let listed = 0..ctx.request.tracks.len().min(ctx.prepared.len());
+    let by_name = |name: &Option<String>| -> Vec<ConflictTrack> {
+        name.as_ref().map_or_else(Vec::new, |name| {
+            listed
+                .clone()
+                .filter(|i| ctx.titles.get(*i).is_some_and(|t| t.title == *name))
+                .map(concerned)
+                .collect()
+        })
+    };
+    details.tracks = match details.reason {
+        R::SourceUnavailable => {
+            let missing: Vec<ConflictTrack> = listed
+                .clone()
+                .filter(|i| entry(*i).is_some() && !ctx.prepared[*i].source.is_file())
+                .map(concerned)
+                .collect();
+            if missing.is_empty() {
+                by_name(&details.name)
+            } else {
+                missing
+            }
+        }
+        R::TrackChangedOnDevice => by_name(&details.name),
+        R::CuesOrGridChangedOnDevice => listed
+            .clone()
+            .filter(|i| entry(*i).is_some_and(|e| analysis_changed_on_device(ctx.destination, e)))
+            .map(concerned)
+            .collect(),
+        _ => Vec::new(),
+    };
+    let text = error.to_string();
+    CliError::new(ErrorCode::Conflict, text).with_details(details.to_value())
+}
+
+/// Whether any of a track's analysis files on the device differs from what
+/// the last sync wrote (rbl-export records a hash of each).
+fn analysis_changed_on_device(destination: &Path, entry: &rbl_export::ManifestTrack) -> bool {
+    !entry.anlz_dir.is_empty()
+        && entry.analysis_hashes.iter().any(|(extension, recorded)| {
+            let path = destination
+                .join(entry.anlz_dir.trim_start_matches('/'))
+                .join(format!("ANLZ0000.{extension}"));
+            std::fs::read(path).is_ok_and(|bytes| rbl_export::manifest::hash(&bytes) != *recorded)
+        })
 }
 
 fn count_analysis(counts: &mut AnalysisCounts, from: AnalysisSource) {

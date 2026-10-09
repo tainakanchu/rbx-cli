@@ -530,6 +530,13 @@ fn absent_cues_keep_the_device_cues_and_an_empty_list_clears_them() {
         "{:#}",
         refused.terminal()
     );
+    let details = &refused.terminal()["details"];
+    assert_eq!(
+        details["reason"], "cues_or_grid_changed_on_device",
+        "{details:#}"
+    );
+    assert_eq!(details["tracks"][0]["index"], 0, "{details:#}");
+    assert!(details["tracks"][0]["deviceId"].is_u64(), "{details:#}");
 
     // Adopting the device's cues (sending them back) is accepted; then `[]` clears.
     let adopt = export(
@@ -548,6 +555,31 @@ fn absent_cues_keep_the_device_cues_and_an_empty_list_clears_them() {
         .is_empty());
     let verify = run(&["usb", "verify", "--json", f.usb.to_str().unwrap()], None);
     assert_eq!(verify.code, 0, "{:#}", verify.terminal());
+}
+
+#[test]
+fn a_missing_source_the_device_holds_is_a_source_unavailable_conflict() {
+    let f = fixture(&[("m1.wav", 6.0, 120.0), ("m2.wav", 6.0, 124.0)]);
+    let request = json!({ "tracks": [
+        { "path": track(&f, "m1.wav"), "ref": "one", "title": "M1" },
+        { "path": track(&f, "m2.wav"), "ref": "two", "title": "M2" }
+    ] });
+    assert_eq!(export(&f, &request).code, 0);
+    std::fs::remove_file(f.music.join("m2.wav")).unwrap();
+    let refused = export(&f, &request);
+    check_envelope(&refused);
+    assert_eq!(refused.code, 1);
+    let error = refused.terminal();
+    assert_eq!(error["code"], "conflict", "{error:#}");
+    assert_eq!(
+        error["details"]["reason"], "source_unavailable",
+        "{error:#}"
+    );
+    assert_eq!(error["details"]["name"], "M2", "{error:#}");
+    let tracks = error["details"]["tracks"].as_array().unwrap();
+    assert_eq!(tracks.len(), 1, "{error:#}");
+    assert_eq!(tracks[0]["index"], 1);
+    assert_eq!(tracks[0]["ref"], "two");
 }
 
 #[test]
