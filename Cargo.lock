@@ -1112,6 +1112,7 @@ dependencies = [
  "clap",
  "ctrlc",
  "dirs",
+ "fs2",
  "image",
  "rbl-analysis",
  "rbl-anlz",

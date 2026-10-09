@@ -109,7 +109,10 @@ fn spellings(destination: &Path) -> Vec<PathBuf> {
     out
 }
 
-/// The free space of the volume holding `destination`, when the OS lists it.
+/// The space available to this process on the filesystem holding
+/// `destination`: the listed volume's figure when the OS lists one (as
+/// `devices list` reports it), else the filesystem's own (`statvfs` on Unix,
+/// the volume's free space on Windows), so a plain folder has one too.
 pub fn free_bytes(destination: &Path) -> Option<u64> {
     let paths = spellings(destination);
     rbl_devices::list()
@@ -117,6 +120,18 @@ pub fn free_bytes(destination: &Path) -> Option<u64> {
         .filter(|d| d.total_bytes > 0 && paths.iter().any(|p| p.starts_with(&d.mount_point)))
         .max_by_key(|d| d.mount_point.as_os_str().len())
         .map(|d| d.free_bytes)
+        .or_else(|| filesystem_free_bytes(destination))
+}
+
+/// The available space of the filesystem holding `path`, asked of its
+/// nearest existing ancestor (the path itself when it exists).
+fn filesystem_free_bytes(path: &Path) -> Option<u64> {
+    let path = std::path::absolute(path).unwrap_or_else(|_| path.to_owned());
+    let existing = path.ancestors().find(|p| p.exists())?;
+    fs2::statvfs(existing)
+        .ok()
+        .filter(|stats| stats.total_space() > 0)
+        .map(|stats| stats.available_space())
 }
 
 /// The listed volume mounted exactly at `destination`.
@@ -125,4 +140,22 @@ pub fn volume_at(destination: &Path) -> Option<rbl_devices::Device> {
     rbl_devices::list()
         .into_iter()
         .find(|d| paths.contains(&d.mount_point))
+}
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_plain_folder_has_free_space() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(free_bytes(dir.path()).is_some_and(|free| free > 0));
+        // A path that does not exist yet is asked of its nearest ancestor.
+        let deeper = dir.path().join("not/yet/there");
+        assert_eq!(
+            filesystem_free_bytes(&deeper).is_some(),
+            filesystem_free_bytes(dir.path()).is_some()
+        );
+    }
 }

@@ -38,6 +38,9 @@ clap = { version = "4.5", features = ["derive", "wrap_help"] }
 ctrlc = { version = "3.4", features = ["termination"] }
 # Same major as rbxport, for the default cache directory.
 dirs = "5"
+# Already in the tree through rbl-core: free space of the filesystem holding
+# a destination folder (statvfs / GetDiskFreeSpace).
+fs2 = "0.4"
 # Same major as rbl-db, so the artwork resize shares one copy of the codec.
 image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
 schemars = "1"

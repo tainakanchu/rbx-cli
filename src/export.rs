@@ -162,7 +162,8 @@ pub struct ByteCounts {
     pub reused: u64,
     /// Estimated audio bytes to copy (plan).
     pub to_copy: u64,
-    /// Free space on the destination volume, when the OS lists it.
+    /// Space available on the filesystem holding the destination (a volume
+    /// root or any folder), when the OS reports it.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub free: Option<u64>,
 }

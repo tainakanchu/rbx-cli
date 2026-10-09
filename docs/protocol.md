@@ -107,7 +107,7 @@ optional `details`.
 | `conflict` | The device's library conflicts with the request; nothing was changed. `details.reason` says why (see [Conflict reasons](#conflict-reasons)) |
 | `device_gone` | The device disappeared while being written |
 | `rekordbox_running` | rekordbox is running (it may write the same device); set `options.allowRekordboxRunning` to override |
-| `insufficient_space` | The volume has less free space than the audio to copy (`details.freeBytes`, `details.bytesToCopy`) |
+| `insufficient_space` | The filesystem holding the destination has less free space than the audio to copy (`details.freeBytes`, `details.bytesToCopy`) |
 | `verification_failed` | The export did not read back correctly (`details` has the report) |
 | `cancelled` | SIGINT/SIGTERM/SIGHUP, Ctrl+C/Ctrl+Break, or a `cancel` line |
 | `io` | Other I/O errors |
@@ -306,10 +306,16 @@ nor the cache): per track whether the audio would be copied or reused
 (`items[].audio`: `copy`/`reuse`, an estimate from the device's sync
 manifest by size and modification time — rbl-export confirms by content),
 where analysis would come from (`cache`, `device`, `supplied`, `generate`,
-`none`), the bytes to copy and the volume's free space (`bytes.free`, when
-the OS lists the volume). A real export refuses to start with
-`insufficient_space` when the estimate exceeds the free space (not checked
-with `convert`, whose output size is unknown in advance).
+`none`), the bytes to copy and the free space (`bytes.free`). A real export refuses
+to start with `insufficient_space` when the estimate exceeds the free space
+(not checked with `convert`, whose output size is unknown in advance).
+
+`bytes.free` is the space available on the filesystem holding the
+destination, whether the destination is a volume root or any folder: the
+volume's figure when the OS lists it (as `devices list` does), else the
+filesystem's own (`statvfs` on Unix, the volume's free space on Windows,
+asked of the nearest existing ancestor). It is absent only when neither
+can be read; the free-space check is then skipped.
 
 ## Analysis, caching and performance
 

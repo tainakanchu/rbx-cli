@@ -211,7 +211,7 @@
           "minimum": 0
         },
         "free": {
-          "description": "Free space on the destination volume, when the OS lists it.",
+          "description": "Space available on the filesystem holding the destination (a volume\nroot or any folder), when the OS reports it.",
           "type": [
             "integer",
             "null"

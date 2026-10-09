@@ -644,6 +644,10 @@ fn dry_run_plans_without_writing() {
     assert_eq!(data["items"][0]["audio"], "copy");
     assert_eq!(data["items"][1]["status"], "skipped");
     assert!(data["bytes"]["toCopy"].as_u64().unwrap() > 0);
+    assert!(
+        data["bytes"]["free"].as_u64().is_some_and(|free| free > 0),
+        "a plain folder reports the free space of its filesystem: {data:#}"
+    );
     assert_eq!(
         std::fs::read_dir(&f.usb).unwrap().count(),
         0,
