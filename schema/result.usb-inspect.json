@@ -1,0 +1,314 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InspectResult",
+  "description": "`usb inspect` result.",
+  "type": "object",
+  "properties": {
+    "databases": {
+      "$ref": "#/$defs/Databases"
+    },
+    "destination": {
+      "type": "string"
+    },
+    "deviceName": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "historyCount": {
+      "description": "Play-history sessions players recorded on the device.",
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "ours": {
+      "description": "Written by rbx-cli or rbxport (a sync manifest is present).",
+      "type": "boolean"
+    },
+    "playlistCount": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "playlists": {
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/InspectPlaylist"
+      }
+    },
+    "root": {
+      "description": "`PIONEER` or `.PIONEER`; absent on a device with no library.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "trackCount": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "tracks": {
+      "description": "Absent with `--summary`.",
+      "type": [
+        "array",
+        "null"
+      ],
+      "items": {
+        "$ref": "#/$defs/InspectTrack"
+      }
+    },
+    "written": {
+      "description": "When that export ran.",
+      "type": [
+        "string",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "destination",
+    "databases",
+    "ours",
+    "trackCount",
+    "playlistCount",
+    "historyCount"
+  ],
+  "$defs": {
+    "Databases": {
+      "type": "object",
+      "properties": {
+        "deviceLibrary": {
+          "description": "`export.pdb` (Device Library, read by older players).",
+          "type": "boolean"
+        },
+        "oneLibrary": {
+          "description": "`exportLibrary.db` (Device Library Plus / OneLibrary).",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "deviceLibrary",
+        "oneLibrary"
+      ]
+    },
+    "InspectCue": {
+      "description": "A cue as read from a device analysis file, in the request's shape.",
+      "type": "object",
+      "properties": {
+        "color": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "colorIndex": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "comment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "loopEndMs": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "slot": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeMs": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "type": {
+          "description": "`memory` or `hot`.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "timeMs"
+      ]
+    },
+    "InspectPlaylist": {
+      "type": "object",
+      "properties": {
+        "folder": {
+          "type": "boolean"
+        },
+        "id": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "parentId": {
+          "description": "0 for the root.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "trackIds": {
+          "description": "Device track ids, in order.",
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "format": "uint32",
+            "minimum": 0
+          }
+        }
+      },
+      "required": [
+        "id",
+        "parentId",
+        "name",
+        "folder",
+        "trackIds"
+      ]
+    },
+    "InspectTrack": {
+      "type": "object",
+      "properties": {
+        "album": {
+          "type": "string"
+        },
+        "analysisPath": {
+          "description": "The `.DAT` path from the device root; empty when none.",
+          "type": "string"
+        },
+        "artist": {
+          "type": "string"
+        },
+        "beats": {
+          "description": "With `--cues`: beats in the device grid.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "bpm": {
+          "type": "number",
+          "format": "double"
+        },
+        "color": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "comment": {
+          "type": "string"
+        },
+        "cues": {
+          "description": "With `--cues`: the cues in the device analysis (including any a\nplayer saved there).",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/InspectCue"
+          }
+        },
+        "dateAdded": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "durationSec": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "genre": {
+          "type": "string"
+        },
+        "id": {
+          "description": "The id players see.",
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "key": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "path": {
+          "description": "The audio's path from the device root.",
+          "type": "string"
+        },
+        "rating": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "source": {
+          "description": "Where an rbx-cli/rbxport export copied it from (its manifest).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sourceId": {
+          "description": "The caller's track `id` of that export, when it had one.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "title": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "id",
+        "title",
+        "artist",
+        "album",
+        "genre",
+        "label",
+        "key",
+        "bpm",
+        "rating",
+        "color",
+        "comment",
+        "path",
+        "analysisPath"
+      ]
+    }
+  }
+}

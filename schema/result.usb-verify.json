@@ -1,0 +1,97 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VerifyResult",
+  "description": "`usb verify` result.",
+  "type": "object",
+  "properties": {
+    "analysisPresent": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "audioPresent": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "beatGrids": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "destination": {
+      "type": "string"
+    },
+    "detailWaveforms": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "errors": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "hotCues": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "memoryCues": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "missingAudio": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ok": {
+      "type": "boolean"
+    },
+    "overviewWaveforms": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "parsed": {
+      "description": "Both databases parsed.",
+      "type": "boolean"
+    },
+    "playlistEntries": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "playlists": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "tracks": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    }
+  },
+  "required": [
+    "destination",
+    "ok",
+    "parsed",
+    "tracks",
+    "playlists",
+    "playlistEntries",
+    "audioPresent",
+    "analysisPresent",
+    "overviewWaveforms",
+    "detailWaveforms",
+    "beatGrids",
+    "hotCues",
+    "memoryCues",
+    "missingAudio",
+    "errors"
+  ]
+}

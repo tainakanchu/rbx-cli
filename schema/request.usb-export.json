@@ -1,0 +1,649 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExportRequest",
+  "description": "A complete description of what the device should hold.\n\nAn export is a sync: tracks and playlists written by an earlier rbx-cli or\nrbxport export that are absent from this request are removed; content\nwritten by other software (e.g. rekordbox) is kept.",
+  "type": "object",
+  "properties": {
+    "destination": {
+      "description": "The device root (mount point), e.g. `/Volumes/DJ STICK` or `E:\\`.\n`--to` overrides it. Must be an existing directory.",
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "options": {
+      "$ref": "#/$defs/ExportOptions",
+      "default": {
+        "allowRekordboxRunning": false,
+        "analysis": {
+          "detectKey": true,
+          "highPrecision": true,
+          "maxBpm": 180.0,
+          "minBpm": 70.0
+        },
+        "analyze": "missing",
+        "embeddedArtwork": true,
+        "prune": true,
+        "readTags": true,
+        "reuseDeviceAnalysis": true,
+        "root": "auto"
+      }
+    },
+    "playlists": {
+      "description": "The playlist tree, in display order.",
+      "type": "array",
+      "default": [],
+      "items": {
+        "$ref": "#/$defs/PlaylistInput"
+      }
+    },
+    "protocol": {
+      "description": "The protocol version the caller was written against. Refused when it\nis newer than this CLI's.",
+      "type": [
+        "integer",
+        "null"
+      ],
+      "format": "uint32",
+      "minimum": 0
+    },
+    "tracks": {
+      "description": "Every track the device should hold, in or out of playlists.",
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TrackInput"
+      }
+    }
+  },
+  "required": [
+    "tracks"
+  ],
+  "$defs": {
+    "AnalysisSettings": {
+      "type": "object",
+      "properties": {
+        "detectKey": {
+          "description": "Use the detected key when the track has no `key`.",
+          "type": "boolean",
+          "default": true
+        },
+        "highPrecision": {
+          "description": "Place beats on kick attacks (rbxport's \"high precision\"); otherwise on\nthe onset envelope.",
+          "type": "boolean",
+          "default": true
+        },
+        "maxBpm": {
+          "description": "Highest tempo the detector may choose (40–300, above `minBpm`).",
+          "type": "number",
+          "format": "double",
+          "default": 180.0
+        },
+        "minBpm": {
+          "description": "Lowest tempo the detector may choose (40–300).",
+          "type": "number",
+          "format": "double",
+          "default": 70.0
+        }
+      }
+    },
+    "AnalyzeMode": {
+      "oneOf": [
+        {
+          "description": "Use `analysisPath` when given; otherwise the analysis cache, then\nanalysis left on the device, then generate.",
+          "type": "string",
+          "const": "missing"
+        },
+        {
+          "description": "Ignore `analysisPath` and on-device analysis; take the analysis cache\n(identical output) or generate.",
+          "type": "string",
+          "const": "always"
+        },
+        {
+          "description": "Never generate: tracks without `analysisPath` are exported without\nanalysis (a player shows no waveform or grid for them).",
+          "type": "string",
+          "const": "never"
+        }
+      ]
+    },
+    "BeatGridInput": {
+      "description": "A caller-supplied beat grid: either every beat, or tempo anchors the\ngrid is generated from. Exactly one of the two.",
+      "type": "object",
+      "properties": {
+        "anchors": {
+          "description": "Tempo anchors, in time order. Each starts a constant-tempo stretch\nthat runs to the next anchor (or the end of the track); beats are\nalso extended back from the first anchor towards 0 ms.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/BeatInput"
+          }
+        },
+        "beats": {
+          "description": "Every beat, in time order.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/BeatInput"
+          }
+        }
+      }
+    },
+    "BeatInput": {
+      "description": "One beat of a grid, or one tempo anchor.",
+      "type": "object",
+      "properties": {
+        "beatNumber": {
+          "description": "Position in the bar, 1–4 (1 = downbeat). Beats: defaults to one\nafter the previous beat's (the first defaults to 1). Anchors: the\nanchor's own position, default 1.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "bpm": {
+          "description": "Tempo from this beat on, in BPM (0 < bpm ≤ 655.35).",
+          "type": "number",
+          "format": "double"
+        },
+        "timeMs": {
+          "description": "Milliseconds from the start of the audio (fractions allowed; the\ndevice format keeps whole milliseconds).",
+          "type": "number",
+          "format": "double"
+        }
+      },
+      "required": [
+        "timeMs",
+        "bpm"
+      ]
+    },
+    "ConvertFormat": {
+      "type": "string",
+      "enum": [
+        "wav",
+        "aiff",
+        "mp3"
+      ]
+    },
+    "CueInput": {
+      "description": "A cue point or loop.",
+      "type": "object",
+      "properties": {
+        "activeLoop": {
+          "description": "The loop is active (engaged on load).",
+          "type": "boolean",
+          "default": false
+        },
+        "color": {
+          "description": "Memory cue colour, as the track `color` (0 none … 8 purple).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "colorIndex": {
+          "description": "Hot cue colour: index into the players' hot cue palette (0 = the\nslot's default colour, 1–64).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "comment": {
+          "description": "The cue's name.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "loopDenominator": {
+          "description": "Beat-loop length denominator.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "loopEndMs": {
+          "description": "Loop end in milliseconds; makes the cue a loop.",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "loopNumerator": {
+          "description": "Beat-loop length as a fraction of beats (e.g. 1/2): numerator.\nInformational; `loopEndMs` sets the length.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "slot": {
+          "description": "Hot cue slot letter `A`–`P`; required for hot cues, refused for memory cues.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "timeMs": {
+          "description": "Position in milliseconds (rounded to whole milliseconds).",
+          "type": "number",
+          "format": "double"
+        },
+        "type": {
+          "$ref": "#/$defs/CueKind"
+        }
+      },
+      "required": [
+        "type",
+        "timeMs"
+      ]
+    },
+    "CueKind": {
+      "oneOf": [
+        {
+          "description": "A memory cue (or memory loop).",
+          "type": "string",
+          "const": "memory"
+        },
+        {
+          "description": "A hot cue (or hot loop) in slot `A`–`H` (`I`–`P` on players that have them).",
+          "type": "string",
+          "const": "hot"
+        }
+      ]
+    },
+    "ExportOptions": {
+      "type": "object",
+      "properties": {
+        "allowRekordboxRunning": {
+          "description": "Write even while rekordbox is running (it may write the same device).",
+          "type": "boolean",
+          "default": false
+        },
+        "analysis": {
+          "description": "Analyser settings (rbxport's Analysis Setting dialog).",
+          "$ref": "#/$defs/AnalysisSettings",
+          "default": {
+            "detectKey": true,
+            "highPrecision": true,
+            "maxBpm": 180.0,
+            "minBpm": 70.0
+          }
+        },
+        "analyze": {
+          "description": "When to generate analysis (beat grid, waveforms, key) with rbxport's analyser.",
+          "$ref": "#/$defs/AnalyzeMode",
+          "default": "missing"
+        },
+        "convert": {
+          "description": "Convert audio a CDJ cannot play natively to this format (rbxport's\ncompatibility conversion). Off when absent.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ConvertFormat"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "deviceName": {
+          "description": "The device name players show (`exportLibrary.db`). Absent keeps the\ndevice's current name (empty on a fresh device).",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "embeddedArtwork": {
+          "description": "Use the file's embedded cover when `artwork` is not given.",
+          "type": "boolean",
+          "default": true
+        },
+        "prune": {
+          "description": "Remove tracks an earlier export put on the device that this request\nno longer lists. With `false` they stay on the device, outside any\nplaylist. Playlists absent from the request are always removed.",
+          "type": "boolean",
+          "default": true
+        },
+        "readTags": {
+          "description": "Fill metadata the request leaves out from the file's own tags.",
+          "type": "boolean",
+          "default": true
+        },
+        "reuseDeviceAnalysis": {
+          "description": "On an analysis-cache miss, reuse the analysis an earlier rbx-cli\nexport left on the device for the same, unchanged audio.",
+          "type": "boolean",
+          "default": true
+        },
+        "root": {
+          "description": "`PIONEER` or `.PIONEER` on a device holding no library yet. `auto`\npicks the hidden root on HFS+ volumes, as rekordbox does. A device\nthat already has a library keeps its root.",
+          "$ref": "#/$defs/RootPreference",
+          "default": "auto"
+        }
+      }
+    },
+    "PlaylistInput": {
+      "description": "A playlist or a folder.",
+      "type": "object",
+      "properties": {
+        "children": {
+          "description": "A folder's contents, in order.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/PlaylistInput"
+          }
+        },
+        "folder": {
+          "description": "A folder holds `children` and no tracks.",
+          "type": "boolean",
+          "default": false
+        },
+        "id": {
+          "description": "The caller's stable, non-zero id (1 ..= 2^63-1). Without it the\nnode's path in the tree (folder names + name) is its identity, so a\nrename is a remove and an add.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "name": {
+          "type": "string"
+        },
+        "tracks": {
+          "description": "Tracks, in order: a track's `ref`, or its zero-based index in `tracks`.",
+          "type": "array",
+          "default": [],
+          "items": {
+            "$ref": "#/$defs/TrackRef"
+          }
+        }
+      },
+      "required": [
+        "name"
+      ]
+    },
+    "RootPreference": {
+      "type": "string",
+      "enum": [
+        "auto",
+        "standard",
+        "hidden"
+      ]
+    },
+    "TrackInput": {
+      "description": "One track.",
+      "type": "object",
+      "properties": {
+        "album": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "analysisPath": {
+          "description": "Existing rekordbox analysis: the `ANLZ0000.DAT`; `.EXT` and `.2EX`\nbeside it are used when present.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "artist": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "artwork": {
+          "description": "A JPEG or PNG cover. Resized to the 80×80 and 240×240 JPEGs a player reads.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "beatGrid": {
+          "description": "A beat grid replacing the analysed (or supplied) one. Only the grid\nsection of the analysis is replaced; waveforms are kept.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/BeatGridInput"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bitDepth": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "bitrate": {
+          "description": "kbit/s.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "bpm": {
+          "description": "Tempo in BPM (two decimals are kept).",
+          "type": [
+            "number",
+            "null"
+          ],
+          "format": "double"
+        },
+        "color": {
+          "description": "Colour label: 0 none, 1 pink, 2 red, 3 orange, 4 yellow, 5 green,\n6 aqua, 7 blue, 8 purple.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "comment": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "cues": {
+          "description": "Hot cues, memory cues and loops. Absent keeps the cues the device\nalready holds for this track (including ones a player saved); `[]`\nclears them; a list replaces them.",
+          "type": [
+            "array",
+            "null"
+          ],
+          "items": {
+            "$ref": "#/$defs/CueInput"
+          }
+        },
+        "dateAdded": {
+          "description": "`YYYY-MM-DD`. Defaults to the date already on the device, else today.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "dateCreated": {
+          "description": "`YYYY-MM-DD`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "discNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        },
+        "durationSec": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "fileSize": {
+          "description": "The size the databases record; defaults to the file's size.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "genre": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "hotCueAutoLoad": {
+          "description": "The player's Hot Cue Auto Load flag for this track.",
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "id": {
+          "description": "The caller's stable, non-zero id for this track (1 ..= 2^63-1). With\nit, a track keeps its device identity when its file moves; without\nit, the file path is the identity.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "isrc": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "key": {
+          "description": "Musical key as the player shows it, e.g. `Am`, `F#m`, `8A`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "path": {
+          "description": "The audio file. The only required field.",
+          "type": "string"
+        },
+        "playCount": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "rating": {
+          "description": "Stars, 0–5.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint8",
+          "maximum": 255,
+          "minimum": 0
+        },
+        "ref": {
+          "description": "A request-local name playlists can use to refer to this track.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "releaseDate": {
+          "description": "`YYYY-MM-DD`.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "sampleRate": {
+          "description": "Hz.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "title": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "trackNumber": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "year": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint16",
+          "maximum": 65535,
+          "minimum": 0
+        }
+      },
+      "required": [
+        "path"
+      ]
+    },
+    "TrackRef": {
+      "description": "A reference to a track of the request.",
+      "anyOf": [
+        {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        {
+          "type": "string"
+        }
+      ]
+    }
+  }
+}

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "VersionInfo",
+  "type": "object",
+  "properties": {
+    "capabilities": {
+      "description": "Supported features; see docs/protocol.md.",
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "name": {
+      "type": "string"
+    },
+    "protocol": {
+      "description": "The wire protocol version (see docs/protocol.md).",
+      "type": "integer",
+      "format": "uint32",
+      "minimum": 0
+    },
+    "rbxportRepository": {
+      "type": "string"
+    },
+    "rbxportRev": {
+      "description": "The rbxport commit the `rbl-*` crates are built from.",
+      "type": "string"
+    },
+    "target": {
+      "description": "`<os>-<arch>` of this build.",
+      "type": "string"
+    },
+    "version": {
+      "description": "This CLI's semver version.",
+      "type": "string"
+    }
+  },
+  "required": [
+    "name",
+    "version",
+    "protocol",
+    "rbxportRev",
+    "rbxportRepository",
+    "capabilities",
+    "target"
+  ]
+}

@@ -1,0 +1,343 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Message",
+  "description": "One line of `--json` output.",
+  "oneOf": [
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "progress"
+        }
+      },
+      "$ref": "#/$defs/Progress",
+      "required": [
+        "type"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "event"
+        }
+      },
+      "$ref": "#/$defs/Event",
+      "required": [
+        "type"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "log"
+        }
+      },
+      "$ref": "#/$defs/Log",
+      "required": [
+        "type"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "result"
+        }
+      },
+      "$ref": "#/$defs/ResultMessage",
+      "required": [
+        "type"
+      ]
+    },
+    {
+      "type": "object",
+      "properties": {
+        "type": {
+          "type": "string",
+          "const": "error"
+        }
+      },
+      "$ref": "#/$defs/ErrorMessage",
+      "required": [
+        "type"
+      ]
+    }
+  ],
+  "$defs": {
+    "ErrorCode": {
+      "description": "Stable, machine-matchable error codes.",
+      "oneOf": [
+        {
+          "description": "Bad command-line arguments.",
+          "type": "string",
+          "const": "usage"
+        },
+        {
+          "description": "The request document is malformed or inconsistent.",
+          "type": "string",
+          "const": "invalid_request"
+        },
+        {
+          "description": "A path or device does not exist.",
+          "type": "string",
+          "const": "not_found"
+        },
+        {
+          "description": "The device's existing library conflicts with the request (see message).",
+          "type": "string",
+          "const": "conflict"
+        },
+        {
+          "description": "The device disappeared while being written.",
+          "type": "string",
+          "const": "device_gone"
+        },
+        {
+          "description": "rekordbox is running; it must not write the same device concurrently.",
+          "type": "string",
+          "const": "rekordbox_running"
+        },
+        {
+          "description": "The destination volume has too little free space for the copy.",
+          "type": "string",
+          "const": "insufficient_space"
+        },
+        {
+          "description": "The written export did not read back correctly.",
+          "type": "string",
+          "const": "verification_failed"
+        },
+        {
+          "description": "SIGINT/SIGTERM/Ctrl+C/Ctrl+Break or a `cancel` control line.",
+          "type": "string",
+          "const": "cancelled"
+        },
+        {
+          "description": "The request needs a newer protocol or an unsupported feature.",
+          "type": "string",
+          "const": "unsupported"
+        },
+        {
+          "description": "An I/O error not covered above.",
+          "type": "string",
+          "const": "io"
+        },
+        {
+          "description": "Anything else.",
+          "type": "string",
+          "const": "internal"
+        }
+      ]
+    },
+    "ErrorMessage": {
+      "description": "The failed outcome of a command. Terminal.",
+      "type": "object",
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/ErrorCode"
+        },
+        "command": {
+          "description": "The command that failed; absent when the command line itself was invalid.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "details": {
+          "description": "Structured context, when there is any (e.g. a verification report)."
+        },
+        "exitCode": {
+          "description": "The process exit code that follows this line.",
+          "type": "integer",
+          "format": "int32"
+        },
+        "message": {
+          "type": "string"
+        },
+        "protocol": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "protocol",
+        "code",
+        "message",
+        "exitCode"
+      ]
+    },
+    "Event": {
+      "description": "Something noteworthy that is not progress, e.g. a skipped track.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "data": {
+          "description": "Event-specific payload."
+        },
+        "event": {
+          "description": "Dotted event name, e.g. `track.skipped`. See docs/protocol.md.",
+          "type": "string"
+        },
+        "protocol": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "protocol",
+        "command",
+        "event",
+        "data"
+      ]
+    },
+    "Log": {
+      "description": "A diagnostic. Never needed to interpret the result.",
+      "type": "object",
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/LogLevel"
+        },
+        "message": {
+          "type": "string"
+        },
+        "protocol": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "target": {
+          "description": "The Rust module that logged it.",
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "protocol",
+        "level",
+        "message"
+      ]
+    },
+    "LogLevel": {
+      "type": "string",
+      "enum": [
+        "error",
+        "warn",
+        "info",
+        "debug",
+        "trace"
+      ]
+    },
+    "Progress": {
+      "description": "How far a long-running command has got.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "description": "The command reporting, e.g. `usb.export`.",
+          "type": "string"
+        },
+        "current": {
+          "description": "Items completed so far in this phase.",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "item": {
+          "description": "The item being worked on, when the phase is per item.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/ProgressItem"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "phase": {
+          "description": "The current phase. For `usb.export`: `preparing`, `analyzing`,\n`checking`, `copying`, `database`, `verifying`, `publishing`.",
+          "type": "string"
+        },
+        "protocol": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        },
+        "total": {
+          "description": "Items in this phase (0 when unknown).",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "protocol",
+        "command",
+        "phase",
+        "current",
+        "total"
+      ]
+    },
+    "ProgressItem": {
+      "description": "The item a progress line is about.",
+      "type": "object",
+      "properties": {
+        "index": {
+          "description": "Zero-based index into the request's `tracks`, when known.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint",
+          "minimum": 0
+        },
+        "ref": {
+          "description": "The track's `ref` from the request, when it had one.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "title": {
+          "description": "Human-readable name (usually the track title).",
+          "type": "string"
+        }
+      },
+      "required": [
+        "title"
+      ]
+    },
+    "ResultMessage": {
+      "description": "The successful outcome of a command. Terminal.",
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string"
+        },
+        "data": {
+          "description": "Command-specific result; see `schema/result.*.json`."
+        },
+        "protocol": {
+          "type": "integer",
+          "format": "uint32",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "protocol",
+        "command",
+        "data"
+      ]
+    }
+  }
+}

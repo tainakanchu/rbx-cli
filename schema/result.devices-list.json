@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "DevicesResult",
+  "description": "`devices list` result.",
+  "type": "object",
+  "properties": {
+    "devices": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/DeviceInfo"
+      }
+    }
+  },
+  "required": [
+    "devices"
+  ],
+  "$defs": {
+    "DeviceExport": {
+      "type": "object",
+      "properties": {
+        "ours": {
+          "description": "Written by rbx-cli or rbxport (incremental sync possible).",
+          "type": "boolean"
+        },
+        "playlists": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "tracks": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "written": {
+          "description": "When that export ran; empty otherwise.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tracks",
+        "playlists",
+        "ours",
+        "written"
+      ]
+    },
+    "DeviceInfo": {
+      "type": "object",
+      "properties": {
+        "export": {
+          "description": "The library on it, if any.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/DeviceExport"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "fileSystem": {
+          "type": "string"
+        },
+        "freeBytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "mountPoint": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "removable": {
+          "description": "What the OS says; external SSDs often say no.",
+          "type": "boolean"
+        },
+        "totalBytes": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "volumeId": {
+          "description": "An identity that survives a rename while mounted.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "mountPoint",
+        "totalBytes",
+        "freeBytes",
+        "fileSystem",
+        "removable",
+        "volumeId"
+      ]
+    }
+  }
+}

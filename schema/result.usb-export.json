@@ -1,0 +1,473 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "ExportResult",
+  "description": "`usb export` result (`data` of the `result` line).",
+  "type": "object",
+  "properties": {
+    "analysis": {
+      "$ref": "#/$defs/AnalysisCounts"
+    },
+    "analysisFiles": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "artworkFiles": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "bytes": {
+      "$ref": "#/$defs/ByteCounts"
+    },
+    "cacheDir": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "destination": {
+      "type": "string"
+    },
+    "dryRun": {
+      "type": "boolean"
+    },
+    "items": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/TrackResult"
+      }
+    },
+    "jobs": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "pdbBytes": {
+      "type": "integer",
+      "format": "uint",
+      "minimum": 0
+    },
+    "playlists": {
+      "$ref": "#/$defs/PlaylistCounts"
+    },
+    "root": {
+      "description": "`PIONEER` or `.PIONEER`.",
+      "type": "string"
+    },
+    "timings": {
+      "$ref": "#/$defs/Timings"
+    },
+    "tracks": {
+      "$ref": "#/$defs/TrackCounts"
+    },
+    "verified": {
+      "description": "Both databases read back and agreed (absent for `--dry-run`).",
+      "type": [
+        "boolean",
+        "null"
+      ]
+    }
+  },
+  "required": [
+    "destination",
+    "root",
+    "dryRun",
+    "tracks",
+    "playlists",
+    "analysis",
+    "bytes",
+    "analysisFiles",
+    "artworkFiles",
+    "pdbBytes",
+    "jobs",
+    "timings",
+    "items"
+  ],
+  "$defs": {
+    "AnalysisCounts": {
+      "type": "object",
+      "properties": {
+        "cacheHits": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "cacheMisses": {
+          "description": "Cache misses (generated + device reuse + failed).",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "cueOverrides": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "deviceReuse": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "failed": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "generated": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "gridOverrides": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "none": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "supplied": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "generated",
+        "cacheHits",
+        "deviceReuse",
+        "supplied",
+        "none",
+        "failed",
+        "cacheMisses",
+        "gridOverrides",
+        "cueOverrides"
+      ]
+    },
+    "AnalysisSource": {
+      "description": "Where a track's analysis came from.",
+      "oneOf": [
+        {
+          "description": "The analysis cache.",
+          "type": "string",
+          "const": "cache"
+        },
+        {
+          "description": "Generated in this run (and cached).",
+          "type": "string",
+          "const": "generated"
+        },
+        {
+          "description": "Taken from the device, left there by an earlier rbx-cli export.",
+          "type": "string",
+          "const": "device"
+        },
+        {
+          "description": "The caller's `analysisPath`.",
+          "type": "string",
+          "const": "supplied"
+        },
+        {
+          "description": "Exported without analysis (`analyze: never`, or nothing to use).",
+          "type": "string",
+          "const": "none"
+        },
+        {
+          "description": "Analysis failed; exported without it (see `error`).",
+          "type": "string",
+          "const": "failed"
+        },
+        {
+          "description": "`--dry-run`: would be generated.",
+          "type": "string",
+          "const": "generate"
+        }
+      ]
+    },
+    "AudioPlan": {
+      "oneOf": [
+        {
+          "type": "string",
+          "enum": [
+            "copy"
+          ]
+        },
+        {
+          "description": "The device copy is current and would be left alone (an estimate:\nrbl-export confirms by content when it runs).",
+          "type": "string",
+          "const": "reuse"
+        }
+      ]
+    },
+    "ByteCounts": {
+      "type": "object",
+      "properties": {
+        "copied": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "free": {
+          "description": "Free space on the destination volume, when the OS lists it.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "reused": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "toCopy": {
+          "description": "Estimated audio bytes to copy (plan).",
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "copied",
+        "reused",
+        "toCopy"
+      ]
+    },
+    "PlaylistCounts": {
+      "type": "object",
+      "properties": {
+        "added": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "removed": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "written": {
+          "description": "Playlists and folders in the written databases.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "written",
+        "added",
+        "removed"
+      ]
+    },
+    "Timings": {
+      "type": "object",
+      "properties": {
+        "analyzeMs": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "exportMs": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "planMs": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "totalMs": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        },
+        "verifyMs": {
+          "type": "integer",
+          "format": "uint64",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "planMs",
+        "analyzeMs",
+        "exportMs",
+        "verifyMs",
+        "totalMs"
+      ]
+    },
+    "TrackCounts": {
+      "type": "object",
+      "properties": {
+        "copied": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "exported": {
+          "description": "Tracks in the written databases (includes kept and device-only ones).",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "kept": {
+          "description": "Tracks kept on the device although not requested (`prune: false`).",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "removed": {
+          "description": "Tracks an earlier export wrote that this one removed.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "requested": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "reused": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "skipped": {
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        }
+      },
+      "required": [
+        "requested",
+        "exported",
+        "copied",
+        "reused",
+        "skipped",
+        "removed",
+        "kept"
+      ]
+    },
+    "TrackResult": {
+      "description": "One requested track's outcome.",
+      "type": "object",
+      "properties": {
+        "analysis": {
+          "$ref": "#/$defs/AnalysisSource"
+        },
+        "analysisDir": {
+          "description": "The analysis directory on the device.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "analysisMs": {
+          "description": "Milliseconds spent decoding and analysing (generated only).",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint64",
+          "minimum": 0
+        },
+        "artwork": {
+          "type": "boolean"
+        },
+        "audio": {
+          "description": "`--dry-run` only.",
+          "anyOf": [
+            {
+              "$ref": "#/$defs/AudioPlan"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cuesOverride": {
+          "description": "The caller's cues were written (`cues` given).",
+          "type": "boolean"
+        },
+        "deviceId": {
+          "description": "The id players see (`export.pdb`/`exportLibrary.db`), stable across syncs.",
+          "type": [
+            "integer",
+            "null"
+          ],
+          "format": "uint32",
+          "minimum": 0
+        },
+        "devicePath": {
+          "description": "The audio's path on the device, from its root.",
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "gridOverride": {
+          "description": "The caller's grid replaced the analysed one.",
+          "type": "boolean"
+        },
+        "index": {
+          "description": "Index in the request's `tracks`.",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "ref": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "status": {
+          "$ref": "#/$defs/TrackStatus"
+        },
+        "title": {
+          "type": "string"
+        },
+        "warnings": {
+          "description": "Problems that did not stop the export (analysis, artwork, grid).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      },
+      "required": [
+        "index",
+        "title",
+        "status",
+        "analysis",
+        "gridOverride",
+        "cuesOverride",
+        "artwork",
+        "warnings"
+      ]
+    },
+    "TrackStatus": {
+      "oneOf": [
+        {
+          "description": "Written to (or kept on) the device.",
+          "type": "string",
+          "const": "exported"
+        },
+        {
+          "description": "Left out: the source file is missing.",
+          "type": "string",
+          "const": "skipped"
+        },
+        {
+          "description": "`--dry-run`: would be exported.",
+          "type": "string",
+          "const": "planned"
+        }
+      ]
+    }
+  }
+}
