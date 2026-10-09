@@ -2,8 +2,12 @@ name: Release notes
 
 # Sets a release's notes from release-notes/<tag>.md on main, for a release
 # that already exists (release.yml uses the same file when it creates one).
+# Runs when a notes file changes on main, or by hand for one tag.
 
 on:
+  push:
+    branches: [main]
+    paths: ["release-notes/*.md"]
   workflow_dispatch:
     inputs:
       tag:
@@ -18,9 +22,32 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - name: Edit the release
+        with:
+          fetch-depth: 2
+      - name: Edit the releases
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           TAG: ${{ inputs.tag }}
-        run: gh release edit "$TAG" --notes-file "release-notes/$TAG.md"
+          BEFORE: ${{ github.event.before }}
+        run: |
+          if [ -n "$TAG" ]; then
+            tags="$TAG"
+          else
+            # Notes files changed by this push. A brand-new branch has no
+            # usable "before", so fall back to the previous commit.
+            base="$BEFORE"
+            if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+              base=HEAD~1
+            fi
+            tags=$(git diff --name-only --diff-filter=AM "$base" HEAD -- 'release-notes/*.md' \
+              | sed -e 's#^release-notes/##' -e 's#\.md$##')
+          fi
+          for tag in $tags; do
+            if gh release view "$tag" > /dev/null 2>&1; then
+              gh release edit "$tag" --notes-file "release-notes/$tag.md"
+              echo "Updated the notes of $tag"
+            else
+              echo "No release $tag yet; release.yml will use the file when it creates it"
+            fi
+          done
