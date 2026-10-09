@@ -1,0 +1,44 @@
+rbx-cli
+Copyright (c) 2026 rbx-cli contributors
+
+This program is free software; you can redistribute it and/or modify it under
+the terms of the GNU General Public License as published by the Free Software
+Foundation; either version 2 of the License, or (at your option) any later
+version. See LICENSE for the full text of version 2.
+
+This program is distributed in the hope that it will be useful, but WITHOUT
+ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or FITNESS
+FOR A PARTICULAR PURPOSE.
+
+rbxport
+-------
+rbx-cli is built on the rbl-* crates of rbxport
+(https://github.com/chrisle/rbxport), used as unmodified git dependencies
+pinned to one revision (see `rbx-cli version`):
+
+  Copyright (c) 2026 Chris Le
+  Licensed under GPL-2.0-or-later.
+
+Binary distributions
+--------------------
+Release binaries statically link third-party Rust crates and C libraries,
+among them:
+
+  - mp3lame-encoder / LAME (LGPL-3.0), used by rbxport for MP3 conversion.
+    LGPL-3.0 code can be combined with GPL-3.0 but not with GPL-2.0-only
+    terms, so a distributed rbx-cli binary is effectively licensed under
+    GPL-3.0, using the "or any later version" option of GPL-2.0-or-later.
+  - SQLCipher (BSD-3-Clause) and OpenSSL (Apache-2.0), compiled in through
+    rusqlite's bundled-sqlcipher-vendored-openssl feature.
+  - symphonia (MPL-2.0), rubato, realfft, lofty, image and others under
+    permissive licenses (MIT and/or Apache-2.0).
+
+The corresponding source of a release is the tagged revision of
+https://github.com/tainakanchu/rbx-cli together with the exact dependency
+versions in its Cargo.lock.
+
+Trademarks
+----------
+rekordbox, CDJ and XDJ are trademarks of AlphaTheta Corporation. rbx-cli is
+not affiliated with, endorsed by or sponsored by AlphaTheta Corporation or
+Pioneer DJ.

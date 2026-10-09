@@ -1,0 +1,6 @@
+[toolchain]
+# Matches the pinned rbxport revision's toolchain. Bump together with the
+# rbxport `rev` in Cargo.toml.
+channel = "1.99.0"
+profile = "minimal"
+components = ["clippy", "rustfmt"]

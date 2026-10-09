@@ -1,0 +1,74 @@
+[package]
+name = "rbx-cli"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.89"
+license = "GPL-2.0-or-later"
+description = "CLI for rekordbox-compatible DJ libraries (USB export and more), built on rbxport crates"
+repository = "https://github.com/tainakanchu/rbx-cli"
+readme = "README.md"
+keywords = ["rekordbox", "dj", "cdj", "usb", "export"]
+categories = ["command-line-utilities", "multimedia::audio"]
+publish = false
+default-run = "rbx-cli"
+
+[[bin]]
+name = "rbx-cli"
+path = "src/main.rs"
+
+[lib]
+name = "rbx_cli"
+path = "src/lib.rs"
+
+# rbxport crates, pinned to one exact commit. Bump all of them together, and
+# update `RBXPORT_REV` in src/version.rs (a test checks they agree).
+# Do NOT add rbl-deck (it vendors Rubber Band) or anything Tauri.
+[dependencies]
+rbl-analysis = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
+rbl-anlz = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
+rbl-audio = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
+rbl-core = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
+rbl-db = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
+rbl-devices = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
+rbl-export = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
+rbl-onelibrary = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
+rbl-pdb = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
+
+clap = { version = "4.5", features = ["derive", "wrap_help"] }
+ctrlc = { version = "3.4", features = ["termination"] }
+# Same major as rbxport, for the default cache directory.
+dirs = "5"
+# Same major as rbl-db, so the artwork resize shares one copy of the codec.
+image = { version = "0.25", default-features = false, features = ["jpeg", "png"] }
+schemars = "1"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"
+tempfile = "3"
+thiserror = "2"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt", "env-filter", "registry", "std"] }
+
+[dev-dependencies]
+tempfile = "3"
+
+[lints.rust]
+unsafe_code = "forbid"
+
+[lints.clippy]
+dbg_macro = "deny"
+unwrap_used = "deny"
+expect_used = "deny"
+panic = "deny"
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
+panic = "unwind"
+
+# Decoding and analysis (symphonia, realfft) and SQLCipher are unusably slow
+# unoptimised; the tests analyse real audio.
+[profile.dev.package."*"]
+opt-level = 2
