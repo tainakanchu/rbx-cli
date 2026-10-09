@@ -1,0 +1,129 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: build (${{ matrix.target }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: x86_64-unknown-linux-gnu
+            os: ubuntu-24.04
+          - target: aarch64-apple-darwin
+            os: macos-latest
+          - target: x86_64-apple-darwin
+            os: macos-latest
+          - target: x86_64-pc-windows-msvc
+            os: windows-latest
+    runs-on: ${{ matrix.os }}
+    env:
+      TARGET: ${{ matrix.target }}
+      # Both macOS builds run on Apple silicon; x86_64 is cross-compiled.
+      MACOSX_DEPLOYMENT_TARGET: "11.0"
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the tag matches Cargo.toml
+        shell: bash
+        run: |
+          version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
+          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo.toml version ${version}"
+            exit 1
+          fi
+          echo "VERSION=${version}" >> "$GITHUB_ENV"
+
+      - name: Windows build environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          "OPENSSL_SRC_PERL=C:\Strawberry\perl\bin\perl.exe" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+          "CARGO_TARGET_DIR=C:\t" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+          # Link the C runtime statically: no Visual C++ redistributable needed.
+          "RUSTFLAGS=-C target-feature=+crt-static" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding ascii
+
+      - name: Install the pinned toolchain and target
+        shell: bash
+        run: |
+          rustup toolchain install || rustup show
+          rustup target add "$TARGET"
+
+      - name: Build
+        shell: bash
+        # SQLCipher and OpenSSL are compiled from source and linked statically
+        # (rusqlite's bundled-sqlcipher-vendored-openssl), so the binary needs
+        # no system OpenSSL/SQLite.
+        run: cargo build --locked --release --target "$TARGET"
+
+      - name: Smoke test
+        if: matrix.target != 'x86_64-apple-darwin'
+        shell: bash
+        run: |
+          dir="${CARGO_TARGET_DIR:-target}"
+          "$dir/$TARGET/release/rbx-cli" version --json
+
+      - name: Package
+        shell: bash
+        run: |
+          dir="${CARGO_TARGET_DIR:-target}"
+          name="rbx-cli-${VERSION}-${TARGET}"
+          mkdir -p "dist/$name"
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            cp "$dir/$TARGET/release/rbx-cli.exe" "dist/$name/"
+          else
+            cp "$dir/$TARGET/release/rbx-cli" "dist/$name/"
+          fi
+          cp LICENSE README.md NOTICE "dist/$name/"
+          cd dist
+          if [ "$RUNNER_OS" = "Windows" ]; then
+            7z a -tzip "$name.zip" "$name" > /dev/null
+          else
+            tar -czf "$name.tar.gz" "$name"
+          fi
+          rm -rf "$name"
+          ls -l
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: rbx-cli-${{ matrix.target }}
+          path: dist/*
+          if-no-files-found: error
+
+  release:
+    name: GitHub release
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: rbx-cli-*
+          merge-multiple: true
+
+      - name: Checksums
+        working-directory: dist
+        run: |
+          sha256sum -- *.tar.gz *.zip > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* \
+            --title "rbx-cli ${GITHUB_REF_NAME#v}" \
+            --generate-notes \
+            --verify-tag
