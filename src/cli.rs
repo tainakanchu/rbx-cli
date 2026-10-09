@@ -93,6 +93,11 @@ pub struct ExportCli {
     /// file (a request read from stdin always enables this).
     #[arg(long)]
     pub stdin_control: bool,
+    /// Treat the end of stdin as a cancellation (implies --stdin-control):
+    /// when the parent process dies, its end of the pipe closes and the
+    /// export stops. The parent must keep stdin open while it runs.
+    #[arg(long)]
+    pub cancel_on_stdin_eof: bool,
 }
 
 #[derive(Debug, Subcommand)]

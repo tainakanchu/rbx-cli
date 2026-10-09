@@ -826,6 +826,70 @@ fn a_cancel_line_on_stdin_stops_the_export_and_leaves_the_device_as_it_was() {
     );
 }
 
+#[test]
+fn the_end_of_stdin_cancels_only_with_cancel_on_stdin_eof() {
+    let names: Vec<String> = (0..6).map(|i| format!("e{i}.wav")).collect();
+    let specs: Vec<(&str, f64, f64)> = names.iter().map(|n| (n.as_str(), 20.0, 120.0)).collect();
+    let f = fixture(&specs);
+    let write_request = |names: &[String]| {
+        let tracks: Vec<Value> = names
+            .iter()
+            .map(|n| json!({ "path": track(&f, n) }))
+            .collect();
+        let path = f.music.join("request.json");
+        std::fs::write(&path, json!({ "tracks": tracks }).to_string()).unwrap();
+        path
+    };
+    let args = |request: &Path, flag: &'static str| {
+        vec![
+            "usb".to_owned(),
+            "export".into(),
+            "--json".into(),
+            "--jobs".into(),
+            "1".into(),
+            "--no-cache".into(),
+            flag.into(),
+            "--input".into(),
+            request.to_string_lossy().into_owned(),
+            "--to".into(),
+            f.usb.to_string_lossy().into_owned(),
+        ]
+    };
+    let run_with = |args: &[String]| {
+        let args: Vec<&str> = args.iter().map(String::as_str).collect();
+        // `run` closes stdin at once, as a parent that died would.
+        run(&args, None)
+    };
+
+    // `--stdin-control` alone: the end of stdin is not a cancellation.
+    let one = write_request(&names[..1]);
+    let kept = run_with(&args(&one, "--stdin-control"));
+    check_envelope(&kept);
+    assert_eq!(kept.code, 0, "{:#}", kept.terminal());
+
+    // `--cancel-on-stdin-eof`: it is, and the device keeps its library.
+    let all = write_request(&names);
+    let cancelled = run_with(&args(&all, "--cancel-on-stdin-eof"));
+    check_envelope(&cancelled);
+    assert_eq!(cancelled.code, 130, "{:#}", cancelled.terminal());
+    assert_eq!(cancelled.terminal()["code"], "cancelled");
+    let inspect = run(
+        &[
+            "usb",
+            "inspect",
+            "--json",
+            "--summary",
+            f.usb.to_str().unwrap(),
+        ],
+        None,
+    );
+    assert_eq!(
+        inspect.data()["trackCount"],
+        1,
+        "the earlier export is intact"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn sigint_cancels() {

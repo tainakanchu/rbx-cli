@@ -105,7 +105,8 @@ fn dispatch(command: Command) -> CliResult<()> {
                 dry_run: args.dry_run,
                 cache,
                 jobs: args.jobs.map_or(export::DEFAULT_JOBS, usize::from),
-                stdin_control: args.stdin_control,
+                stdin_control: args.stdin_control || args.cancel_on_stdin_eof,
+                cancel_on_stdin_eof: args.cancel_on_stdin_eof,
             })?;
             output::result(&result, || export::human(&result));
         }

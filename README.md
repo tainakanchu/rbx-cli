@@ -90,7 +90,8 @@ With `--json`, every line on stdout is one JSON envelope
 ending with exactly one `result` or `error`. Exit codes: 0 ok, 1 error,
 2 usage/invalid request, 3 verification failed, 130 cancelled. Cancel with
 SIGINT/SIGTERM (Ctrl+C/Ctrl+Break on Windows) or by writing `cancel` to
-stdin; the device keeps its previous library. The full contract — request
+stdin (`--cancel-on-stdin-eof` also cancels when stdin closes, e.g. because
+the parent process died); the device keeps its previous library. The full contract — request
 and result shapes, events, error codes, cue and grid semantics, versioning
 — is in **[docs/protocol.md](docs/protocol.md)**, with JSON Schemas in
 [`schema/`](schema).

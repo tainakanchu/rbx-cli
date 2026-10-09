@@ -27,6 +27,7 @@ pub const CAPABILITIES: &[&str] = &[
     "usb.export.prune",
     "usb.export.deviceName",
     "usb.export.stdinCancel",
+    "usb.export.stdinEofCancel",
     "usb.format.deviceLibrary",
     "usb.format.oneLibrary",
     "usb.inspect",

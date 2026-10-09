@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 //! Cancellation: SIGINT/SIGTERM/SIGHUP (Unix), Ctrl+C/Ctrl+Break (Windows),
-//! or a `cancel` line on stdin when `--stdin-control` is given.
+//! or a `cancel` line on stdin when `--stdin-control` is given, and the end
+//! of stdin with `--cancel-on-stdin-eof` (the parent process went away).
 //!
 //! The first request sets a flag that rbxport polls between tracks and before
 //! publishing (its publication is atomic once started, so the device is never
@@ -57,17 +58,17 @@ pub fn is_cancel_line(line: &str) -> bool {
 }
 
 /// Watches the rest of stdin for control lines on a background thread.
-/// End of input is not a cancellation (a request piped in ends with it).
-pub fn watch_stdin<R: BufRead + Send + 'static>(reader: R) {
+/// End of input (or a read error) is a cancellation only when
+/// `eof_cancels`; by default it is not (a request piped in ends with it).
+pub fn watch_stdin<R: BufRead + Send + 'static>(reader: R, eof_cancels: bool) {
     let spawned = std::thread::Builder::new()
         .name("stdin-control".into())
         .spawn(move || {
-            for line in reader.lines() {
-                let Ok(line) = line else { break };
-                if is_cancel_line(&line) {
-                    request();
-                    break;
-                }
+            if watch(reader) {
+                request();
+            } else if eof_cancels {
+                tracing::info!("stdin closed: cancelling (--cancel-on-stdin-eof)");
+                request();
             }
         });
     if let Err(e) = spawned {
@@ -75,9 +76,28 @@ pub fn watch_stdin<R: BufRead + Send + 'static>(reader: R) {
     }
 }
 
+/// Reads control lines until a cancel line (true) or the end of input or
+/// a read error (false).
+fn watch<R: BufRead>(reader: R) -> bool {
+    for line in reader.lines() {
+        let Ok(line) = line else { return false };
+        if is_cancel_line(&line) {
+            return true;
+        }
+    }
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_cancel_line_ends_the_watch_and_the_end_of_input_does_not_count() {
+        assert!(watch(&b"ping\ncancel\nmore\n"[..]));
+        assert!(!watch(&b"ping\n"[..]));
+        assert!(!watch(&b""[..]));
+    }
 
     #[test]
     fn cancel_lines_are_recognised() {

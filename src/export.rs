@@ -33,6 +33,8 @@ pub struct ExportArgs {
     pub cache: Cache,
     pub jobs: usize,
     pub stdin_control: bool,
+    /// The end of stdin cancels (`--cancel-on-stdin-eof`).
+    pub cancel_on_stdin_eof: bool,
 }
 
 /// How many tracks rbxport analyses at once by default (its queue's slots).
@@ -773,9 +775,12 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
     let started = Instant::now();
     let (request, rest) = crate::request::read(&args.input)?;
     if let Some(rest) = rest {
-        crate::cancel::watch_stdin(rest);
+        crate::cancel::watch_stdin(rest, args.cancel_on_stdin_eof);
     } else if args.stdin_control {
-        crate::cancel::watch_stdin(std::io::BufReader::new(std::io::stdin()));
+        crate::cancel::watch_stdin(
+            std::io::BufReader::new(std::io::stdin()),
+            args.cancel_on_stdin_eof,
+        );
     }
     let playlists_flat = request.validate()?;
     let destination = args

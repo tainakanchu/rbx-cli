@@ -26,7 +26,7 @@ rbx-cli [--json] [--quiet] [--log-level LEVEL] <command> [args]
 
 | Command | Purpose | Result schema |
 | --- | --- | --- |
-| `usb export [--input FILE\|-] [--to DIR] [--dry-run] [--cache-dir DIR \| --no-cache] [--jobs N] [--stdin-control]` | Export / incrementally sync tracks and playlists to a USB root | `result.usb-export.json` |
+| `usb export [--input FILE\|-] [--to DIR] [--dry-run] [--cache-dir DIR \| --no-cache] [--jobs N] [--stdin-control] [--cancel-on-stdin-eof]` | Export / incrementally sync tracks and playlists to a USB root | `result.usb-export.json` |
 | `usb inspect ROOT [--summary] [--cues]` | What an export holds | `result.usb-inspect.json` |
 | `usb verify ROOT` | Read an export back and check it | `result.usb-verify.json` |
 | `devices list` | Mounted volumes and their libraries | `result.devices-list.json` |
@@ -164,8 +164,16 @@ sync manifest and the files. `message` keeps rbxport's text.
 - **stdin**: when the request is read from stdin, the rest of stdin is
   watched for control lines (with `--input FILE`, pass `--stdin-control`).
   A line `cancel` or `{"type":"cancel"}` cancels. End of input is not a
-  cancellation. This is the portable way for a parent process to cancel on
-  Windows.
+  cancellation (a request piped in ends with it). This is the portable way
+  for a parent process to cancel on Windows.
+- **stdin closing**: with `--cancel-on-stdin-eof` (which implies
+  `--stdin-control`), the end of stdin (or a read error) also cancels. When
+  the parent process dies, the OS closes its end of the pipe, so the export
+  stops instead of running on unattended. The parent must keep stdin open
+  for as long as the export runs (with the request on stdin: write it, then
+  keep the pipe open). Capability `usb.export.stdinEofCancel`. It is a
+  separate flag, rather than the behaviour of `--stdin-control`, because
+  "end of input is not a cancellation" is what `--stdin-control` promises.
 
 Cancellation is checked between tracks during analysis, between tracks while
 rbl-export copies, and once more before publication. rbl-export stages the
@@ -451,7 +459,8 @@ list` shows (never forced; any other path is `not_found`) →
 Capabilities are stable strings (`usb.export`, `usb.export.cues`,
 `usb.export.beatGrid.anchors`, `usb.export.analysisCache`, …); test for them
 rather than comparing versions. Added in 0.1.1: `conflict-reasons`
-(`details.reason` on `conflict` errors).
+(`details.reason` on `conflict` errors) and `usb.export.stdinEofCancel`
+(`--cancel-on-stdin-eof`).
 
 ## Versioning policy
 
