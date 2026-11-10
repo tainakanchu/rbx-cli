@@ -51,10 +51,7 @@ pub fn grid_of(files: &[AnalysisFile]) -> Option<Vec<Beat>> {
 /// The empty cue lists a freshly authored file carries (what rbl-anlz's
 /// author writes when there is nothing to carry over).
 fn empty_cue_lists(extended: bool) -> Vec<Section> {
-    let bytes = AnlzBuilder::new()
-        .empty_cue_list_of(extended, 0)
-        .empty_cue_list_of(extended, 1)
-        .finish();
+    let bytes = AnlzBuilder::new().cue_lists(extended).finish();
     rbl_anlz::parse(&bytes)
         .map(|a| a.sections)
         .unwrap_or_default()
@@ -62,8 +59,15 @@ fn empty_cue_lists(extended: bool) -> Vec<Section> {
 
 fn with_cue_lists(bytes: &[u8], lists: Vec<Section>) -> Result<Vec<u8>, String> {
     let mut parsed = parse(bytes)?;
+    // The lists go where the file's own were (rekordbox's order puts them
+    // among the waveforms in an `.EXT`), and at the end when it had none.
+    let at = parsed
+        .sections
+        .iter()
+        .position(Section::is_cue_list)
+        .unwrap_or(parsed.sections.len());
     parsed.sections.retain(|s| !s.is_cue_list());
-    parsed.sections.extend(lists);
+    parsed.sections.splice(at..at, lists);
     Ok(parsed.to_bytes())
 }
 

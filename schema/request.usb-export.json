@@ -23,7 +23,7 @@
         },
         "analyze": "missing",
         "embeddedArtwork": true,
-        "onDeviceChanges": "fail",
+        "onDeviceChanges": "overwrite",
         "prune": true,
         "readTags": true,
         "reuseDeviceAnalysis": true,
@@ -315,9 +315,9 @@
           "default": true
         },
         "onDeviceChanges": {
-          "description": "What to do with a track whose cues or beat grid changed on the\ndevice since the last sync (e.g. cues saved on a player) when the\nrequest would replace them.",
+          "description": "What to do with a track whose cues or beat grid changed on the\ndevice since the last sync (e.g. cues saved on a player): `overwrite`\n(default) replaces them with the request's, `keepDevice` keeps them.",
           "$ref": "#/$defs/OnDeviceChanges",
-          "default": "fail"
+          "default": "overwrite"
         },
         "prune": {
           "description": "Remove tracks an earlier export put on the device that this request\nno longer lists. With `false` they stay on the device, outside any\nplaylist. Playlists absent from the request are always removed.",
@@ -345,9 +345,9 @@
       "description": "`options.onDeviceChanges`.",
       "oneOf": [
         {
-          "description": "Refuse the export with `conflict` (`cues_or_grid_changed_on_device`).",
+          "description": "The request's cues and beat grid replace the device's, as rbxport's\nsync does: the library wins over what a player saved. A track the\nrequest does not give `cues`/`beatGrid` for keeps the device's.",
           "type": "string",
-          "const": "fail"
+          "const": "overwrite"
         },
         {
           "description": "For each track whose analysis files changed on the device since the\nlast sync, keep the device's cue lists and beat grid (ignoring the\nrequest's `cues` and `beatGrid` for it) and apply everything else.",

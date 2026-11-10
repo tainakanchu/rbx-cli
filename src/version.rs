@@ -8,7 +8,7 @@ use crate::protocol::PROTOCOL_VERSION;
 
 /// The rbxport commit every `rbl-*` dependency is pinned to. Must equal the
 /// `rev` in Cargo.toml (a test checks).
-pub const RBXPORT_REV: &str = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c";
+pub const RBXPORT_REV: &str = "d0ff75b378ec85be891d9f3067ada1e82bad4cae";
 
 /// Feature flags a caller can test for instead of comparing versions.
 /// Only ever added to within one protocol version.
@@ -36,6 +36,7 @@ pub const CAPABILITIES: &[&str] = &[
     "devices.eject",
     "usb.export.conflictReasons",
     "usb.export.keepDeviceChanges",
+    "usb.export.keptAndFailedItems",
 ];
 
 #[derive(Debug, Clone, Serialize, JsonSchema)]

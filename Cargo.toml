@@ -1,6 +1,6 @@
 [package]
 name = "rbx-cli"
-version = "0.1.1"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.89"
 license = "GPL-2.0-or-later"
@@ -24,15 +24,15 @@ path = "src/lib.rs"
 # update `RBXPORT_REV` in src/version.rs (a test checks they agree).
 # Do NOT add rbl-deck (it vendors Rubber Band) or anything Tauri.
 [dependencies]
-rbl-analysis = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
-rbl-anlz = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
-rbl-audio = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
-rbl-core = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
-rbl-db = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
-rbl-devices = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
-rbl-export = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
-rbl-onelibrary = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
-rbl-pdb = { git = "https://github.com/chrisle/rbxport", rev = "a029c0c2b9d6c9732b4634ee8be42ff66bbfc56c" }
+rbl-analysis = { git = "https://github.com/chrisle/rbxport", rev = "d0ff75b378ec85be891d9f3067ada1e82bad4cae" }
+rbl-anlz = { git = "https://github.com/chrisle/rbxport", rev = "d0ff75b378ec85be891d9f3067ada1e82bad4cae" }
+rbl-audio = { git = "https://github.com/chrisle/rbxport", rev = "d0ff75b378ec85be891d9f3067ada1e82bad4cae" }
+rbl-core = { git = "https://github.com/chrisle/rbxport", rev = "d0ff75b378ec85be891d9f3067ada1e82bad4cae" }
+rbl-db = { git = "https://github.com/chrisle/rbxport", rev = "d0ff75b378ec85be891d9f3067ada1e82bad4cae" }
+rbl-devices = { git = "https://github.com/chrisle/rbxport", rev = "d0ff75b378ec85be891d9f3067ada1e82bad4cae" }
+rbl-export = { git = "https://github.com/chrisle/rbxport", rev = "d0ff75b378ec85be891d9f3067ada1e82bad4cae" }
+rbl-onelibrary = { git = "https://github.com/chrisle/rbxport", rev = "d0ff75b378ec85be891d9f3067ada1e82bad4cae" }
+rbl-pdb = { git = "https://github.com/chrisle/rbxport", rev = "d0ff75b378ec85be891d9f3067ada1e82bad4cae" }
 
 clap = { version = "4.5", features = ["derive", "wrap_help"] }
 ctrlc = { version = "3.4", features = ["termination"] }

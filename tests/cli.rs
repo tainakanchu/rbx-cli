@@ -106,7 +106,11 @@ fn run(args: &[&str], stdin: Option<&str>) -> Run {
     {
         let mut input = child.stdin.take().unwrap();
         if let Some(text) = stdin {
-            input.write_all(text.as_bytes()).unwrap();
+            // The child may refuse the request and exit before reading it
+            // all; the closed pipe is then not a failure of the test.
+            if let Err(e) = input.write_all(text.as_bytes()) {
+                assert_eq!(e.kind(), std::io::ErrorKind::BrokenPipe, "{e}");
+            }
         }
     }
     let out = child.wait_with_output().unwrap();
@@ -151,7 +155,7 @@ fn track(f: &Fixture, name: &str) -> String {
 /// terminal line, and it is the last.
 fn check_envelope(run: &Run) {
     for line in &run.lines {
-        assert_eq!(line["protocol"], 1, "{line}");
+        assert_eq!(line["protocol"], 2, "{line}");
         assert!(
             matches!(
                 line["type"].as_str(),
@@ -187,7 +191,7 @@ fn anlz(usb: &Path, data: &Value, index: usize, extension: &str) -> rbl_anlz::An
 fn export_inspect_verify_round_trip() {
     let f = fixture(&[("one.wav", 12.0, 120.0), ("two.wav", 10.0, 128.0)]);
     let request = json!({
-        "protocol": 1,
+        "protocol": 2,
         "tracks": [
             { "path": track(&f, "one.wav"), "ref": "one", "title": "One", "artist": "Artist", "album": "LP", "genre": "House", "key": "8A", "rating": 4, "color": 2 },
             { "path": track(&f, "two.wav"), "ref": "two", "title": "Two", "artist": "Artist", "bpm": 128.0 },
@@ -513,32 +517,25 @@ fn absent_cues_keep_the_device_cues_and_an_empty_list_clears_them() {
         .collect();
     assert!(kept.contains(&1000) && kept.contains(&3000), "{kept:?}");
 
-    // A player saves another; a sync that replaces the cues is refused
-    // rather than losing it.
+    // A player saves another; a sync that replaces the cues overwrites it
+    // (the default, `onDeviceChanges: overwrite`).
     add_memory_cue_on_device(&f.usb, second.data(), 5000);
-    let refused = export(
+    let replaced = export(
         &f,
         &request(Some(
             json!([{ "type": "hot", "slot": "B", "timeMs": 2000 }]),
         )),
     );
-    assert_eq!(refused.code, 1);
-    assert_eq!(refused.terminal()["type"], "error");
-    assert_eq!(
-        refused.terminal()["code"],
-        "conflict",
-        "{:#}",
-        refused.terminal()
-    );
-    let details = &refused.terminal()["details"];
-    assert_eq!(
-        details["reason"], "cues_or_grid_changed_on_device",
-        "{details:#}"
-    );
-    assert_eq!(details["tracks"][0]["index"], 0, "{details:#}");
-    assert!(details["tracks"][0]["deviceId"].is_u64(), "{details:#}");
+    assert_eq!(replaced.code, 0, "{:#}", replaced.terminal());
+    assert_eq!(replaced.data()["tracks"]["deviceChangesKept"], 0);
+    let after: Vec<u32> = anlz(&f.usb, replaced.data(), 0, "EXT")
+        .cue_entries()
+        .iter()
+        .map(|e| e.time_ms)
+        .collect();
+    assert_eq!(after, vec![2000], "the player's cues are replaced");
 
-    // Adopting the device's cues (sending them back) is accepted; then `[]` clears.
+    // Sending cues again is accepted; then `[]` clears.
     let adopt = export(
         &f,
         &request(Some(json!([
@@ -591,22 +588,13 @@ fn keep_device_keeps_cues_and_grid_a_player_changed() {
             ]
         })
     };
-    let first = export(&f, &request("fail", 1000));
+    let first = export(&f, &request("overwrite", 1000));
     assert_eq!(first.code, 0, "{:#}", first.terminal());
     assert_eq!(first.data()["tracks"]["deviceChangesKept"], 0);
 
     // A player saves a memory cue on the first track and moves its grid.
     add_memory_cue_on_device(&f.usb, first.data(), 3000);
     let first_beat = shift_grid_on_device(&f.usb, first.data(), 7);
-
-    // The default still refuses.
-    let refused = export(&f, &request("fail", 2000));
-    assert_eq!(
-        refused.terminal()["code"],
-        "conflict",
-        "{:#}",
-        refused.terminal()
-    );
 
     // A dry run says what keepDevice would do.
     let planned = run(
@@ -672,28 +660,92 @@ fn keep_device_keeps_cues_and_grid_a_player_changed() {
 }
 
 #[test]
-fn a_missing_source_the_device_holds_is_a_source_unavailable_conflict() {
+fn a_missing_source_the_device_holds_keeps_the_device_copy() {
     let f = fixture(&[("m1.wav", 6.0, 120.0), ("m2.wav", 6.0, 124.0)]);
     let request = json!({ "tracks": [
         { "path": track(&f, "m1.wav"), "ref": "one", "title": "M1" },
         { "path": track(&f, "m2.wav"), "ref": "two", "title": "M2" }
     ] });
-    assert_eq!(export(&f, &request).code, 0);
+    let first = export(&f, &request);
+    assert_eq!(first.code, 0, "{:#}", first.terminal());
+    let device_audio = f.usb.join(
+        first.data()["items"][1]["devicePath"]
+            .as_str()
+            .unwrap()
+            .trim_start_matches('/'),
+    );
+    let before = std::fs::read(&device_audio).unwrap();
     std::fs::remove_file(f.music.join("m2.wav")).unwrap();
+
+    // A dry run says the same.
+    let planned = run(
+        &[
+            "usb",
+            "export",
+            "--json",
+            "--dry-run",
+            "--to",
+            f.usb.to_str().unwrap(),
+            "--cache-dir",
+            f.cache.to_str().unwrap(),
+        ],
+        Some(&request.to_string()),
+    );
+    assert_eq!(planned.data()["items"][1]["status"], "kept");
+    assert_eq!(planned.data()["tracks"]["keptExisting"], 1);
+
+    let kept = export(&f, &request);
+    check_envelope(&kept);
+    assert_eq!(kept.code, 0, "{:#}", kept.terminal());
+    let data = kept.data();
+    assert_eq!(data["items"][0]["status"], "exported");
+    assert_eq!(data["items"][1]["status"], "kept", "{data:#}");
+    assert_eq!(data["items"][1]["ref"], "two");
+    assert!(!data["items"][1]["warnings"].as_array().unwrap().is_empty());
+    assert_eq!(data["tracks"]["keptExisting"], 1);
+    assert_eq!(data["tracks"]["failed"], 0);
+    assert_eq!(data["tracks"]["skipped"], 0);
+    assert_eq!(data["tracks"]["exported"], 2);
+    assert_eq!(
+        data["items"][1]["deviceId"],
+        first.data()["items"][1]["deviceId"],
+        "the track keeps its id on the device"
+    );
+    assert_eq!(
+        std::fs::read(&device_audio).unwrap(),
+        before,
+        "the device copy is untouched"
+    );
+    let again = export(&f, &request);
+    assert_eq!(again.code, 0, "{:#}", again.terminal());
+    assert_eq!(
+        again.data()["items"][1]["status"],
+        "kept",
+        "{:#}",
+        again.data()
+    );
+    assert_eq!(std::fs::read(&device_audio).unwrap(), before);
+    let verify = run(&["usb", "verify", "--json", f.usb.to_str().unwrap()], None);
+    assert_eq!(verify.code, 0, "{:#}", verify.terminal());
+}
+
+#[test]
+fn on_device_changes_fail_was_removed_in_protocol_2() {
+    let f = fixture(&[("g.wav", 4.0, 120.0)]);
+    let request = json!({
+        "options": { "onDeviceChanges": "fail" },
+        "tracks": [{ "path": track(&f, "g.wav") }]
+    });
     let refused = export(&f, &request);
     check_envelope(&refused);
-    assert_eq!(refused.code, 1);
+    assert_eq!(refused.code, 2, "{:#}", refused.terminal());
     let error = refused.terminal();
-    assert_eq!(error["code"], "conflict", "{error:#}");
-    assert_eq!(
-        error["details"]["reason"], "source_unavailable",
-        "{error:#}"
+    assert_eq!(error["code"], "invalid_request", "{error:#}");
+    let message = error["message"].as_str().unwrap();
+    assert!(
+        message.contains("removed in protocol 2") && message.contains("keepDevice"),
+        "{message}"
     );
-    assert_eq!(error["details"]["name"], "M2", "{error:#}");
-    let tracks = error["details"]["tracks"].as_array().unwrap();
-    assert_eq!(tracks.len(), 1, "{error:#}");
-    assert_eq!(tracks[0]["index"], 1);
-    assert_eq!(tracks[0]["ref"], "two");
 }
 
 #[test]
@@ -880,7 +932,7 @@ fn errors_are_envelopes_with_exit_codes() {
 
     let version = run(&["version", "--json"], None);
     let data = version.data();
-    assert_eq!(data["protocol"], 1);
+    assert_eq!(data["protocol"], 2);
     assert_eq!(data["rbxportRev"].as_str().unwrap().len(), 40);
     assert!(data["capabilities"]
         .as_array()

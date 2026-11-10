@@ -35,7 +35,7 @@
       "$ref": "#/$defs/ConflictReason"
     },
     "tracks": {
-      "description": "Request tracks concerned, when rbx-cli can tell (`usb export` only):\nfor `source_unavailable`, every listed track the device holds whose\nsource is not readable; for `cues_or_grid_changed_on_device`, every\nlisted track whose analysis files on the device changed since the\nlast sync; for `track_changed_on_device`, the listed tracks with the\ntitle rbxport named.",
+      "description": "Request tracks concerned, when rbx-cli can tell (`usb export` only):\nfor `device_cues_on_removed_track` and `track_changed_on_device`, the\nlisted tracks with the title rbxport named.",
       "type": "array",
       "items": {
         "$ref": "#/$defs/ConflictTrack"
@@ -51,14 +51,9 @@
       "description": "Why the device's library conflicts with the request. Stable snake_case\nstrings; new reasons may be added, so treat unknown ones as `other`.",
       "oneOf": [
         {
-          "description": "A track's analysis files on the device (cue lists or beat grid)\nchanged since the last sync, e.g. cues saved on a player, and the\nrequest would replace them. rbxport does not say which of the two.",
+          "description": "A player added or changed cue points on a track that this sync would\ntake off the device (`name` = its title). Keep a playlist that holds\nit in the request, or delete the track on the device in rekordbox.\n(Cues a player changed on a track that stays are not a conflict: see\n`options.onDeviceChanges`.)",
           "type": "string",
-          "const": "cues_or_grid_changed_on_device"
-        },
-        {
-          "description": "`exportLibrary.db` holds cue records changed on the device since the\nlast sync that this export would replace.",
-          "type": "string",
-          "const": "onelibrary_cues_changed_on_device"
+          "const": "device_cues_on_removed_track"
         },
         {
           "description": "A track's metadata changed on the device since the last sync.",
@@ -94,11 +89,6 @@
           "description": "A track being removed is still referenced by the device's history.",
           "type": "string",
           "const": "history_references_track"
-        },
-        {
-          "description": "A track an earlier export put on the device has no readable source\n(missing, or it disappeared while being copied).",
-          "type": "string",
-          "const": "source_unavailable"
         },
         {
           "description": "The device belongs to a different (or older, unverified) library.",
