@@ -13,7 +13,7 @@ use serde::Serialize;
 /// Bump on any breaking change: a removed or renamed field, a changed type or
 /// meaning, a removed command. Additive changes (new optional request
 /// fields, new result fields, new event names, new capabilities) do not bump it.
-pub const PROTOCOL_VERSION: u32 = 1;
+pub const PROTOCOL_VERSION: u32 = 2;
 
 /// One line of `--json` output.
 #[derive(Debug, Clone, Serialize, JsonSchema)]

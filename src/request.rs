@@ -73,8 +73,8 @@ pub struct ExportOptions {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_name: Option<String>,
     /// What to do with a track whose cues or beat grid changed on the
-    /// device since the last sync (e.g. cues saved on a player) when the
-    /// request would replace them.
+    /// device since the last sync (e.g. cues saved on a player): `overwrite`
+    /// (default) replaces them with the request's, `keepDevice` keeps them.
     pub on_device_changes: OnDeviceChanges,
 }
 
@@ -91,7 +91,7 @@ impl Default for ExportOptions {
             reuse_device_analysis: true,
             prune: true,
             device_name: None,
-            on_device_changes: OnDeviceChanges::Fail,
+            on_device_changes: OnDeviceChanges::Overwrite,
         }
     }
 }
@@ -149,16 +149,35 @@ pub enum ConvertFormat {
 }
 
 /// `options.onDeviceChanges`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Deserialize, Serialize, JsonSchema)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub enum OnDeviceChanges {
-    /// Refuse the export with `conflict` (`cues_or_grid_changed_on_device`).
+    /// The request's cues and beat grid replace the device's, as rbxport's
+    /// sync does: the library wins over what a player saved. A track the
+    /// request does not give `cues`/`beatGrid` for keeps the device's.
     #[default]
-    Fail,
+    Overwrite,
     /// For each track whose analysis files changed on the device since the
     /// last sync, keep the device's cue lists and beat grid (ignoring the
     /// request's `cues` and `beatGrid` for it) and apply everything else.
     KeepDevice,
+}
+
+impl<'de> Deserialize<'de> for OnDeviceChanges {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let value = String::deserialize(deserializer)?;
+        match value.as_str() {
+            "overwrite" => Ok(Self::Overwrite),
+            "keepDevice" => Ok(Self::KeepDevice),
+            "fail" => Err(serde::de::Error::custom(
+                "options.onDeviceChanges: `fail` was removed in protocol 2; use `overwrite` or `keepDevice`",
+            )),
+            other => Err(serde::de::Error::unknown_variant(
+                other,
+                &["overwrite", "keepDevice"],
+            )),
+        }
+    }
 }
 
 #[derive(
@@ -804,6 +823,10 @@ mod tests {
             ),
             (r#"{"tracks":[{"path":"a","id":0}]}"#, "out of range"),
             (r#"{"tracks":[{"path":"a","rating":6}]}"#, "rating"),
+            (
+                r#"{"options":{"onDeviceChanges":"fail"},"tracks":[]}"#,
+                "removed in protocol 2",
+            ),
             (r#"{"tracks":[{"path":"a","color":9}]}"#, "color"),
             (
                 r#"{"tracks":[{"path":"a","cues":[{"type":"hot","timeMs":1}]}]}"#,

@@ -50,11 +50,11 @@ Every run ends with **exactly one** terminal line, `result` or `error`, and
 it is the last line. Readers must ignore unknown `type`s and unknown fields.
 
 ```jsonc
-{"type":"progress","protocol":1,"command":"usb.export","phase":"analyze","current":3,"total":12,"item":{"index":2,"ref":"t3","title":"Track Three"}}
-{"type":"event","protocol":1,"command":"usb.export","event":"track.skipped","data":{"index":5,"ref":null,"path":"/music/gone.mp3","reason":"missing"}}
-{"type":"log","protocol":1,"level":"warn","message":"could not store analysis in the cache","target":"rbx_cli::export"}
-{"type":"result","protocol":1,"command":"usb.export","data":{ ... }}
-{"type":"error","protocol":1,"command":"usb.export","code":"conflict","message":"USB sync conflict: ...","exitCode":1,"details":{ ... }}
+{"type":"progress","protocol":2,"command":"usb.export","phase":"analyze","current":3,"total":12,"item":{"index":2,"ref":"t3","title":"Track Three"}}
+{"type":"event","protocol":2,"command":"usb.export","event":"track.skipped","data":{"index":5,"ref":null,"path":"/music/gone.mp3","reason":"missing"}}
+{"type":"log","protocol":2,"level":"warn","message":"could not store analysis in the cache","target":"rbx_cli::export"}
+{"type":"result","protocol":2,"command":"usb.export","data":{ ... }}
+{"type":"error","protocol":2,"command":"usb.export","code":"conflict","message":"USB sync conflict: ...","exitCode":1,"details":{ ... }}
 ```
 
 **progress** — `command`, `phase`, `current`, `total` (0 when unknown),
@@ -128,8 +128,7 @@ A `conflict` error's `details` (schema `details.conflict.json`; capability
 
 | `reason` | Meaning | `tracks` |
 | --- | --- | --- |
-| `cues_or_grid_changed_on_device` | A track's analysis files on the device (cue lists or beat grid; rbxport does not say which) changed since the last sync, e.g. cues saved on a player, and the request replaces them. See [Cues](#cues); `options.onDeviceChanges: "keepDevice"` keeps the device's instead. | Every listed track whose analysis files on the device differ from what the last sync wrote |
-| `onelibrary_cues_changed_on_device` | `exportLibrary.db` cue records changed on the device since the last sync, and the export would replace them | — |
+| `device_cues_on_removed_track` | A player added or changed cue points on a track this sync would take off the device (`name` = its title). Keep a playlist that holds it in the request, or delete the track on the device in rekordbox. Cues changed on a track that stays are not a conflict: see [Cues](#cues) and `options.onDeviceChanges`. | — |
 | `track_changed_on_device` | A track's metadata changed on the device (`database`, `name` = title) | Listed tracks with that title |
 | `playlist_changed_on_device` | A playlist changed on the device (`database`, `name`) | — |
 | `my_tags_changed_on_device` | A My Tag (`name`) or a track's My Tags (`deviceTrackId`) changed on the device | — |
@@ -137,7 +136,6 @@ A `conflict` error's `details` (schema `details.conflict.json`; capability
 | `device_only_track` | A track only the device has would be lost (`database`, `name`) | — |
 | `device_only_playlist` | A playlist only the device has would be lost (`name`) | — |
 | `history_references_track` | A track being removed is still in the device's history | — |
-| `source_unavailable` | A track an earlier export put on the device has no readable source (missing, or gone while copying; `name` = the first one's title) | Every listed track the device holds whose source is not a file |
 | `ownership` | The device belongs to a different (or older, unverified) library | — |
 | `identities_changed` | rekordbox changed the device's track identities | — |
 | `libraries_disagree` | The device's two existing libraries disagree | — |
@@ -191,7 +189,7 @@ are ignored; check `version` capabilities for features.
 
 ```jsonc
 {
-  "protocol": 1,                     // optional; refused if newer than the CLI's
+  "protocol": 2,                     // optional; refused if newer than the CLI's
   "destination": "/Volumes/DJ STICK", // optional; `--to` overrides
   "options": {
     "analyze": "missing",            // missing | always | never
@@ -204,7 +202,7 @@ are ignored; check `version` capabilities for features.
     "reuseDeviceAnalysis": true,
     "prune": true,
     "deviceName": "DJ STICK",        // optional
-    "onDeviceChanges": "fail"        // fail | keepDevice
+    "onDeviceChanges": "overwrite"   // overwrite | keepDevice
   },
   "tracks": [
     {
@@ -245,11 +243,17 @@ its file moves; without it, its absolute `path` is its identity. The device
 id players see (`deviceId` in the result) is kept stable across syncs, as
 rbxport does (decks cache artwork and waveforms by it).
 
-**Missing files** are skipped (`track.skipped` event, `status: "skipped"`),
-unless an earlier export put the track on the device: then the export is
-refused with `conflict` (`details.reason`: `source_unavailable`,
-`details.tracks`: those tracks) and the device is untouched (rbxport never deletes a
-good device copy because the source went offline).
+**Missing files.** A track whose source is missing and that no earlier export
+put on the device is skipped (`track.skipped` event, `status: "skipped"`). A
+track the device already holds is **kept as it is**: the sync succeeds (exit
+code 0, as rbxport treats it), the device copy, its analysis and its
+playlist entries are untouched, and the item has `status: "kept"` with a
+`warnings` entry (`tracks.keptExisting` counts them). The same happens when
+the source is there but updating the device copy from it failed. A track
+whose audio cannot be read, converted or copied while writing is left out of
+the export and the rest carries on: `status: "failed"`, a `warnings` entry
+with rbxport's reason (`tracks.failed`), exit code 0. Check `status` (or the
+counts) rather than the exit code to tell whether every track is current.
 
 ### Playlists
 
@@ -273,7 +277,7 @@ derived from it). A track may be in several playlists or none.
 | `reuseDeviceAnalysis` | true | See caching. |
 | `prune` | true | `false` keeps tracks an earlier export wrote that the request no longer lists (outside any playlist; metadata as on the device). Playlists absent from the request are always removed. |
 | `deviceName` | — | The name players show (in `exportLibrary.db`). |
-| `onDeviceChanges` | `fail` | A track whose cues or beat grid changed on the device since the last sync (e.g. cues saved on a player). `fail`: the export is refused with `conflict` (`cues_or_grid_changed_on_device`) when the request would replace them. `keepDevice`: for each such track, the device's cue lists and grid are kept and its `cues`/`beatGrid` ignored (a `warnings` entry says so); everything else is applied. See [Cues](#cues). Capability `usb.export.keepDeviceChanges`. |
+| `onDeviceChanges` | `overwrite` | A track whose cues or beat grid changed on the device since the last sync (e.g. cues saved on a player). `overwrite`: the request's `cues`/`beatGrid` replace the device's, as rbxport's sync does (a track without `cues` keeps the device's cue lists). `keepDevice`: for each such track, the device's cue lists and grid are kept and its `cues`/`beatGrid` ignored (a `warnings` entry says so); everything else is applied. `fail` (protocol 1) was removed: a request that sends it is refused with `invalid_request`. See [Cues](#cues). Capability `usb.export.keepDeviceChanges`. |
 
 **Formats.** Every export writes both the Device Library (`export.pdb`, for
 older players) and Device Library Plus / OneLibrary (`exportLibrary.db`), as
@@ -286,7 +290,7 @@ content written by other software (e.g. rekordbox) are preserved.
 ```jsonc
 {
   "destination": "/Volumes/DJ STICK", "root": "PIONEER", "dryRun": false,
-  "tracks":   { "requested": 12, "exported": 12, "copied": 2, "reused": 10, "skipped": 0, "removed": 1, "kept": 0, "deviceChangesKept": 0 },
+  "tracks":   { "requested": 12, "exported": 12, "copied": 2, "reused": 10, "skipped": 0, "removed": 1, "kept": 0, "keptExisting": 0, "failed": 0, "deviceChangesKept": 0 },
   "playlists":{ "written": 4, "added": 1, "removed": 0 },
   "analysis": { "generated": 2, "cacheHits": 10, "deviceReuse": 0, "supplied": 0, "none": 0, "failed": 0,
                 "cacheMisses": 2, "gridOverrides": 1, "cueOverrides": 12 },
@@ -305,7 +309,16 @@ content written by other software (e.g. rekordbox) are preserved.
 
 `items[].analysis`: `cache`, `generated`, `device`, `supplied`, `none`,
 `failed` (exported without analysis; see `warnings`), and with `--dry-run`
-`generate`. `status`: `exported`, `skipped`, or `planned` (`--dry-run`).
+`generate`. `status`: `exported`, `skipped` (source missing, not on the device), `kept`
+(the device copy was kept because the source was unavailable or the update
+failed; `warnings` says which), `failed` (left out: the audio could not be
+read, converted or copied; `warnings` has the reason) or `planned`
+(`--dry-run`, which also reports `kept` for a missing source the device
+holds). `tracks.keptExisting` and `tracks.failed` count them (rbxport's own
+counts; `tracks.kept` is unrelated: tracks kept by `prune: false`). Items are
+matched to rbxport's report by title and `id`; a `kept` track found only
+through that report (a copy kept on an earlier sync) has no `deviceId`,
+`devicePath` or `analysisDir`. Capability `usb.export.keptAndFailedItems`.
 `items[].deviceChangesKept` (count: `tracks.deviceChangesKept`): with
 `onDeviceChanges: keepDevice`, the track's device cues and grid were kept
 (with `--dry-run`: would be); `gridOverride`/`cuesOverride` are then false.
@@ -395,18 +408,15 @@ too; all go to the `.EXT` extended lists and `exportLibrary.db`.
 Cues never affect the analysis cache: they are applied at export time.
 
 **Cues saved on a player.** When a DJ stores memory (or hot) cues on the
-stick, the player changes the track's analysis files on the device (and,
-on OneLibrary players, possibly `exportLibrary.db`). On the next export:
+stick, the player changes the track's analysis files on the device. On the
+next export:
 
 - with `cues` **absent**, those cues are kept (the device's cue lists are
   carried over), so a routine sync does not lose them;
-- with `cues` **given**, and the device's cues (or grid) changed since the
-  last export, rbl-export refuses the whole export with `conflict`
-  (`details.reason`: `cues_or_grid_changed_on_device`, `details.tracks`:
-  the tracks whose analysis changed on the device) and changes nothing.
-  Read them with `usb inspect --cues`, merge them into the caller's data,
-  and export again with the merged list (sending exactly what the device
-  holds is always accepted);
+- with `cues` **given** and `options.onDeviceChanges: "overwrite"` (the
+  default), the request's cues replace the device's: the library wins, as
+  in rbxport's sync. Read what a player saved with `usb inspect --cues`
+  and merge it into the caller's data first if it must survive;
 - with `options.onDeviceChanges: "keepDevice"`, a track whose analysis
   files on the device changed since the last sync keeps the device's cue
   lists **and** beat grid (`PCOB`/`PCO2`, `PQTZ`/`PQT2`; waveforms and
@@ -417,9 +427,10 @@ on OneLibrary players, possibly `exportLibrary.db`). On the next export:
   hash of each), so the device wins only for this sync: once written, the
   next sync applies the request's `cues`/`beatGrid` (or the analysed grid)
   again unless the device changes again. Import what you want to keep
-  (`usb inspect --cues`) before then. Only these analysis changes are
-  covered: every other conflict (including cue rows changed only in
-  `exportLibrary.db`, `onelibrary_cues_changed_on_device`) still fails.
+  (`usb inspect --cues`) before then.
+
+One case still refuses: a player added cues to a track the sync would take
+off the device (`conflict`, `device_cues_on_removed_track`).
 
 ## Beat grids
 
@@ -479,12 +490,12 @@ Capabilities are stable strings (`usb.export`, `usb.export.cues`,
 rather than comparing versions. Added in 0.1.1: `usb.export.conflictReasons`
 (`details.reason` on `conflict` errors), `usb.export.stdinEofCancel`
 (`--cancel-on-stdin-eof`) and `usb.export.keepDeviceChanges`
-(`options.onDeviceChanges`).
+(`options.onDeviceChanges`). Added in protocol 2: `usb.export.keptAndFailedItems`.
 
 ## Versioning policy
 
 - `protocol` (envelope and request/result shapes) is an integer, currently
-  **1**, carried on every line and in `version`.
+  **2**, carried on every line and in `version`.
 - **Additive** changes keep the number: new optional request fields, new
   result fields, new event names, new progress phases, new error codes, new
   commands, new capabilities. Readers must ignore what they do not know.
@@ -495,3 +506,23 @@ rather than comparing versions. Added in 0.1.1: `usb.export.conflictReasons`
 - Later phases add a long-running `serve` mode (JSON-RPC over stdio) whose
   notifications reuse these envelopes (`progress`, `event`, `log`) and whose
   responses carry the same `result`/`error` payloads.
+
+## Changes in protocol 2
+
+Built on rbxport 1.10, whose sync no longer refuses where protocol 1 did.
+Callers that sent protocol 1 requests must review these:
+
+- `options.onDeviceChanges`: `fail` (the old default) is **removed** and
+  refused with `invalid_request`; the default is now `overwrite`, so cues and
+  grids a player saved are replaced by the request's instead of refusing.
+  `keepDevice` is unchanged.
+- `conflict` reasons `cues_or_grid_changed_on_device` and
+  `onelibrary_cues_changed_on_device` are **removed** (rbxport no longer
+  raises them); `device_cues_on_removed_track` covers the one remaining
+  cue guard.
+- `conflict` reason `source_unavailable` is **removed**: a missing source for
+  a track the device holds no longer fails the sync; the device copy is kept
+  (`items[].status: "kept"`, exit code 0).
+- `items[].status` gains `kept` and `failed`; `tracks` gains `keptExisting`
+  and `failed`. A sync with `failed` tracks still exits 0.
+- Every envelope carries `"protocol": 2`.

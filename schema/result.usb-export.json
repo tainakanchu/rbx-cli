@@ -320,8 +320,20 @@
           "format": "uint",
           "minimum": 0
         },
+        "failed": {
+          "description": "Requested tracks left out because their audio could not be read,\nconverted or copied (`items[].status` is `failed`).",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
         "kept": {
           "description": "Tracks kept on the device although not requested (`prune: false`).",
+          "type": "integer",
+          "format": "uint",
+          "minimum": 0
+        },
+        "keptExisting": {
+          "description": "Requested tracks whose device copy was kept because the source was\nunavailable or updating failed (`items[].status` is `kept`).",
           "type": "integer",
           "format": "uint",
           "minimum": 0
@@ -356,6 +368,8 @@
         "skipped",
         "removed",
         "kept",
+        "keptExisting",
+        "failed",
         "deviceChangesKept"
       ]
     },
@@ -470,9 +484,19 @@
           "const": "exported"
         },
         {
-          "description": "Left out: the source file is missing.",
+          "description": "Left out: the source file is missing and the device holds no copy.",
           "type": "string",
           "const": "skipped"
+        },
+        {
+          "description": "The device's copy was kept as it is because the source is\nunavailable (missing, unreadable) or updating from it failed; see\nthe item's `warnings`. With `--dry-run`: would be kept.",
+          "type": "string",
+          "const": "kept"
+        },
+        {
+          "description": "Left out of the export: its audio could not be read, converted or\ncopied (see the item's `warnings`). The rest of the export carried on.",
+          "type": "string",
+          "const": "failed"
         },
         {
           "description": "`--dry-run`: would be exported.",

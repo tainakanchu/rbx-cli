@@ -86,7 +86,7 @@ rbx-cli version --json      # version, pinned rbxport revision, protocol, capabi
 ## JSON mode
 
 With `--json`, every line on stdout is one JSON envelope
-(`{"type": "progress"|"event"|"log"|"result"|"error", "protocol": 1, ...}`),
+(`{"type": "progress"|"event"|"log"|"result"|"error", "protocol": 2, ...}`),
 ending with exactly one `result` or `error`. Exit codes: 0 ok, 1 error,
 2 usage/invalid request, 3 verification failed, 130 cancelled. Cancel with
 SIGINT/SIGTERM (Ctrl+C/Ctrl+Break on Windows) or by writing `cancel` to

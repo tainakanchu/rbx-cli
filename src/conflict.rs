@@ -16,13 +16,12 @@ use serde::Serialize;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ConflictReason {
-    /// A track's analysis files on the device (cue lists or beat grid)
-    /// changed since the last sync, e.g. cues saved on a player, and the
-    /// request would replace them. rbxport does not say which of the two.
-    CuesOrGridChangedOnDevice,
-    /// `exportLibrary.db` holds cue records changed on the device since the
-    /// last sync that this export would replace.
-    OnelibraryCuesChangedOnDevice,
+    /// A player added or changed cue points on a track that this sync would
+    /// take off the device (`name` = its title). Keep a playlist that holds
+    /// it in the request, or delete the track on the device in rekordbox.
+    /// (Cues a player changed on a track that stays are not a conflict: see
+    /// `options.onDeviceChanges`.)
+    DeviceCuesOnRemovedTrack,
     /// A track's metadata changed on the device since the last sync.
     TrackChangedOnDevice,
     /// A playlist changed on the device since the last sync.
@@ -37,9 +36,6 @@ pub enum ConflictReason {
     DeviceOnlyPlaylist,
     /// A track being removed is still referenced by the device's history.
     HistoryReferencesTrack,
-    /// A track an earlier export put on the device has no readable source
-    /// (missing, or it disappeared while being copied).
-    SourceUnavailable,
     /// The device belongs to a different (or older, unverified) library.
     Ownership,
     /// rekordbox changed the device's track identities since the last sync.
@@ -108,11 +104,8 @@ pub struct ConflictDetails {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub device_track_id: Option<u32>,
     /// Request tracks concerned, when rbx-cli can tell (`usb export` only):
-    /// for `source_unavailable`, every listed track the device holds whose
-    /// source is not readable; for `cues_or_grid_changed_on_device`, every
-    /// listed track whose analysis files on the device changed since the
-    /// last sync; for `track_changed_on_device`, the listed tracks with the
-    /// title rbxport named.
+    /// for `device_cues_on_removed_track` and `track_changed_on_device`, the
+    /// listed tracks with the title rbxport named.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub tracks: Vec<ConflictTrack>,
 }
@@ -158,11 +151,12 @@ pub fn classify(message: &str) -> ConflictDetails {
     let quoted = |open: &str, close: &str| between(message, open, close).map(str::to_owned);
     let has = |needle: &str| message.contains(needle);
 
-    if has("USB cues or beat grids changed since the last sync") {
-        details.reason = R::CuesOrGridChangedOnDevice;
-    } else if message.starts_with("OneLibrary contains cue records") {
-        details.reason = R::OnelibraryCuesChangedOnDevice;
-        details.database = Some(Database::OneLibrary);
+    if has("has cue points added or changed on a player, and this sync would take it off") {
+        details.reason = R::DeviceCuesOnRemovedTrack;
+        details.name = message
+            .strip_prefix('\'')
+            .and_then(|rest| rest.split_once("' has cue points"))
+            .map(|(title, _)| title.to_owned());
     } else if has(": playlist '") && has("' changed on the USB") {
         details.reason = R::PlaylistChangedOnDevice;
         details.database = database_prefix(message);
@@ -189,17 +183,13 @@ pub fn classify(message: &str) -> ConflictDetails {
         details.database = database_prefix(message);
     } else if has("still referenced by USB history") {
         details.reason = R::HistoryReferencesTrack;
-    } else if message.starts_with("Source unavailable for '") {
-        details.reason = R::SourceUnavailable;
-        details.name = quoted("Source unavailable for '", "'. Reconnect");
-    } else if message.starts_with("Source disappeared while copying '") {
-        details.reason = R::SourceUnavailable;
-        details.name = quoted("Source disappeared while copying '", "': ");
-    } else if has("belongs to a different or older unverified master library") {
+    } else if has("belongs to a different or older unverified master library")
+        || has("sync owner differs from its last export")
+    {
         details.reason = R::Ownership;
     } else if has("changed the device track identities") {
         details.reason = R::IdentitiesChanged;
-    } else if has("two existing device libraries disagree") {
+    } else if has("two existing device libraries disagree") || has("two libraries differ") {
         details.reason = R::LibrariesDisagree;
     } else if has("Both PIONEER and .PIONEER") {
         details.reason = R::BothRoots;
@@ -216,7 +206,10 @@ pub fn classify(message: &str) -> ConflictDetails {
         details.database = Some(Database::OneLibrary);
     } else if has("The device changed during sync") {
         details.reason = R::DeviceChangedDuringSync;
-    } else if message.starts_with("Staged export did not verify") {
+    } else if message.starts_with("Staged export did not verify")
+        || has("export did not verify")
+        || has("generation did not verify")
+    {
         details.reason = R::StagedVerificationFailed;
     } else if message.starts_with("Invalid device-relative path") || has("points outside the USB") {
         details.reason = R::InvalidDevicePath;
@@ -271,8 +264,10 @@ mod tests {
     #[test]
     fn rbl_export_messages_are_classified() {
         let cases: &[Case] = &[
-            ("USB cues or beat grids changed since the last sync. Import the USB cues/grids before exporting.", R::CuesOrGridChangedOnDevice, None, None, None),
-            ("OneLibrary contains cue records that this export would replace. Import the cues in rekordbox first.", R::OnelibraryCuesChangedOnDevice, Some(D::OneLibrary), None, None),
+            ("'It's A' has cue points added or changed on a player, and this sync would take it off the USB. Keep a playlist that holds it in the sync, or delete the track from the USB in rekordbox, then sync again.", R::DeviceCuesOnRemovedTrack, None, Some("It's A"), None),
+            ("The export did not verify, so the USB was left as it was: bad", R::StagedVerificationFailed, None, None, None),
+            ("This device's two libraries differ; a full export would overwrite a device-only edit. Nothing was changed.", R::LibrariesDisagree, None, None, None),
+            ("The device's sync owner differs from its last export. Nothing was changed.", R::Ownership, None, None, None),
             ("Device Library: 'It's On' changed on the USB. Import its changes before syncing.", R::TrackChangedOnDevice, Some(D::DeviceLibrary), Some("It's On"), None),
             ("OneLibrary: 'Track' changed on the USB. Import its changes before syncing.", R::TrackChangedOnDevice, Some(D::OneLibrary), Some("Track"), None),
             ("OneLibrary: device-only track 'Solo' would be lost", R::DeviceOnlyTrack, Some(D::OneLibrary), Some("Solo"), None),
@@ -282,8 +277,6 @@ mod tests {
             ("My Tag 'Warm up' changed on the USB", R::MyTagsChangedOnDevice, None, Some("Warm up"), None),
             ("My Tags changed on USB track 12", R::MyTagsChangedOnDevice, None, None, Some(12)),
             ("A track being removed is still referenced by USB history. Import and clear that history in rekordbox first.", R::HistoryReferencesTrack, None, None, None),
-            ("Source unavailable for 'A'. Reconnect or relocate it before syncing; the USB has not been changed.", R::SourceUnavailable, None, Some("A"), None),
-            ("Source disappeared while copying 'B': No such file or directory (os error 2)", R::SourceUnavailable, None, Some("B"), None),
             ("This USB belongs to a different or older unverified master library. Import its contents in rekordbox before changing its ownership.", R::Ownership, None, None, None),
             ("rekordbox changed the device track identities. Reconcile this device before reusing its previous selection.", R::IdentitiesChanged, None, None, None),
             ("The two existing device libraries disagree. Reconcile them in rekordbox before their first sync here.", R::LibrariesDisagree, None, None, None),

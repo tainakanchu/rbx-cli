@@ -67,8 +67,15 @@ pub enum AnalysisSource {
 pub enum TrackStatus {
     /// Written to (or kept on) the device.
     Exported,
-    /// Left out: the source file is missing.
+    /// Left out: the source file is missing and the device holds no copy.
     Skipped,
+    /// The device's copy was kept as it is because the source is
+    /// unavailable (missing, unreadable) or updating from it failed; see
+    /// the item's `warnings`. With `--dry-run`: would be kept.
+    Kept,
+    /// Left out of the export: its audio could not be read, converted or
+    /// copied (see the item's `warnings`). The rest of the export carried on.
+    Failed,
     /// `--dry-run`: would be exported.
     Planned,
 }
@@ -136,6 +143,12 @@ pub struct TrackCounts {
     pub removed: usize,
     /// Tracks kept on the device although not requested (`prune: false`).
     pub kept: usize,
+    /// Requested tracks whose device copy was kept because the source was
+    /// unavailable or updating failed (`items[].status` is `kept`).
+    pub kept_existing: usize,
+    /// Requested tracks left out because their audio could not be read,
+    /// converted or copied (`items[].status` is `failed`).
+    pub failed: usize,
     /// Tracks whose device cues and grid were kept
     /// (`onDeviceChanges: keepDevice`; see `items[].deviceChangesKept`).
     pub device_changes_kept: usize,
@@ -644,6 +657,8 @@ fn build_tracks(
                 hot_cue_auto_load: track.hot_cue_auto_load.unwrap_or(false),
                 date_created: track.date_created.clone().unwrap_or_default(),
                 isrc: track.isrc.clone().unwrap_or_default(),
+                // Requests carry no library ContentLink: 0 is "unknown".
+                content_link: 0,
             },
             cues,
             device: None,
@@ -669,6 +684,7 @@ fn build_tracks(
             analysis,
             artwork: prep.artwork.clone(),
             my_tags: Vec::new(),
+            ..Default::default()
         });
         built.grid_override.push(grid_override);
         built.device_kept.push(keep_device);
@@ -737,6 +753,7 @@ fn kept_tracks(
                         audio: device.path.clone(),
                         analysis_dir,
                         preserve: true,
+                        exported: false,
                     }),
                 )
             };
@@ -766,6 +783,8 @@ fn kept_tracks(
                     u32::try_from(rbl_db::write::ANALYSED_FULL).unwrap_or(105)
                 },
                 hot_cue_auto_load: row.is_some_and(|r| r.hot_cue_auto_load),
+                // The stick's own value, as a track read back from it keeps it.
+                content_link: row.map_or(0, |r| r.content_link),
                 ..rbl_core::ExportMetadata::default()
             },
             cues: None,
@@ -795,6 +814,7 @@ fn kept_tracks(
             analysis,
             artwork,
             my_tags: Vec::new(),
+            ..Default::default()
         });
     }
     Ok(out)
@@ -965,7 +985,17 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
 
     for (index, (track, prep)) in request.tracks.iter().zip(&prepared).enumerate() {
         let missing = prep.stamp.is_none();
-        if missing {
+        let held = manifest_entry(manifest.as_ref(), &track_key(track, &prep.source)).is_some();
+        if missing && held {
+            output::event(
+                "track.warning",
+                serde_json::json!({ "index": index, "ref": track.reference, "message": KEPT_MISSING }),
+                &format!(
+                    "warning: tracks[{index}]: {KEPT_MISSING}: {}",
+                    prep.source.display()
+                ),
+            );
+        } else if missing {
             output::event(
                 "track.skipped",
                 serde_json::json!({ "index": index, "ref": track.reference, "path": prep.source, "reason": "missing" }),
@@ -992,7 +1022,14 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
                 );
             result.tracks.device_changes_kept += usize::from(kept);
             count_analysis(&mut result.analysis, from);
-            result.tracks.skipped += usize::from(prep.stamp.is_none());
+            let held = manifest_entry(manifest.as_ref(), &track_key(track, &prep.source)).is_some();
+            let keeps_copy = prep.stamp.is_none() && held;
+            result.tracks.kept_existing += usize::from(keeps_copy);
+            result.tracks.skipped += usize::from(prep.stamp.is_none() && !held);
+            let mut warnings = prep.warnings.clone();
+            if keeps_copy {
+                warnings.push(KEPT_MISSING.into());
+            }
             result.items.push(TrackResult {
                 index,
                 reference: track.reference.clone(),
@@ -1002,6 +1039,8 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
                     .unwrap_or_else(|| file_stem(&prep.source)),
                 status: if prep.stamp.is_some() {
                     TrackStatus::Planned
+                } else if held {
+                    TrackStatus::Kept
                 } else {
                     TrackStatus::Skipped
                 },
@@ -1015,7 +1054,7 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
                 device_id: None,
                 device_path: None,
                 analysis_dir: None,
-                warnings: prep.warnings.clone(),
+                warnings,
             });
         }
         result.tracks.copied = audio_plan
@@ -1069,6 +1108,7 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
             parent_id: p.parent_id,
             folder: p.folder,
             track_indices: p.track_indices.clone(),
+            entries_changed_ms: None,
         })
         .collect();
     let defaults =
@@ -1095,6 +1135,7 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
                 crate::request::ConvertFormat::Mp3 => rbl_export::CompatibilityFormat::Mp3,
             }),
             root: preferred_root,
+            ..Default::default()
         },
         &mut |p| {
             let item = (p.done < requested && !p.title.is_empty()).then(|| ProgressItem {
@@ -1119,7 +1160,6 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
                 prepared: &prepared,
                 titles: &tracks,
                 manifest: manifest.as_ref(),
-                destination: &destination,
             },
         )
     })?;
@@ -1192,11 +1232,23 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
         tracing::warn!(error = %e, "could not record analysis provenance on the device");
     }
 
+    let (mut kept_items, mut failed_items) = (0_usize, 0_usize);
+    let reported = Reported::new(&request, &tracks, &report);
     for (index, (track, prep)) in request.tracks.iter().zip(&prepared).enumerate() {
         let key = track_key(track, &prep.source);
-        let written = after
-            .as_ref()
-            .and_then(|m| m.tracks.iter().find(|t| t.key() == key));
+        // A track whose device copy was kept is recorded under the device's
+        // own path rather than the request's source, so it is found again by
+        // the id and audio path the previous sync gave it.
+        let earlier = manifest_entry(manifest.as_ref(), &key);
+        let written = after.as_ref().and_then(|m| {
+            m.tracks.iter().find(|t| t.key() == key).or_else(|| {
+                earlier.and_then(|e| {
+                    m.tracks
+                        .iter()
+                        .find(|t| t.export_id == e.export_id && t.audio == e.audio)
+                })
+            })
+        });
         let from = if prep.stamp.is_none() {
             AnalysisSource::None
         } else {
@@ -1205,15 +1257,15 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
         if prep.stamp.is_some() {
             count_analysis(&mut result.analysis, from);
         }
+        let (status, mut warnings) =
+            reported.outcome(index, prep.stamp.is_none(), written.is_some());
+        let mut item_warnings = built.warnings[index].clone();
+        item_warnings.append(&mut warnings);
         let item = TrackResult {
             index,
             reference: track.reference.clone(),
             title: tracks[index].title.clone(),
-            status: if written.is_some() {
-                TrackStatus::Exported
-            } else {
-                TrackStatus::Skipped
-            },
+            status,
             analysis: from,
             analysis_ms: prep.analysis_ms,
             audio: None,
@@ -1226,15 +1278,29 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
             analysis_dir: written
                 .map(|w| w.anlz_dir.clone())
                 .filter(|d| !d.is_empty()),
-            warnings: built.warnings[index].clone(),
+            warnings: item_warnings,
         };
         result.analysis.grid_overrides += usize::from(item.grid_override);
         result.analysis.cue_overrides +=
             usize::from(item.cues_override && item.status == TrackStatus::Exported);
         result.tracks.skipped += usize::from(item.status == TrackStatus::Skipped);
+        kept_items += usize::from(item.status == TrackStatus::Kept);
+        failed_items += usize::from(item.status == TrackStatus::Failed);
         result.tracks.device_changes_kept +=
             usize::from(item.device_changes_kept && item.status == TrackStatus::Exported);
         result.items.push(item);
+    }
+    // rbxport's own counts are the authority; the items say which tracks.
+    result.tracks.kept_existing = report.kept_existing;
+    result.tracks.failed = report.failed.len();
+    if kept_items != report.kept_existing || failed_items != report.failed.len() {
+        tracing::warn!(
+            kept_items,
+            kept = report.kept_existing,
+            failed_items,
+            failed = report.failed.len(),
+            "rbxport's report could not be matched to every request track"
+        );
     }
     result.tracks.exported = report.tracks;
     result.tracks.copied = report.tracks.saturating_sub(report.reused);
@@ -1255,6 +1321,108 @@ pub fn run(args: &ExportArgs) -> CliResult<ExportResult> {
     Ok(result)
 }
 
+const KEPT_MISSING: &str = "source unavailable: the device's copy was kept as it is";
+
+/// rbl-export's report, matched back to the request's tracks.
+///
+/// The report names tracks by title (and the request's `id`, 0 when none),
+/// not by position, so a name is only matched to an item when exactly one
+/// request track carries it. A source rbx-cli found missing for a track the
+/// device holds needs no matching: the device copy was kept.
+struct Reported {
+    /// Per request track, why rbxport kept the device copy although the
+    /// source was there (`update-failed`).
+    update_failed: Vec<Option<String>>,
+    /// Per request track, whether rbxport kept the device copy because the
+    /// source was unavailable (`source-unavailable`).
+    unavailable: Vec<bool>,
+    /// Per request track, why rbxport left it out.
+    failed: Vec<Option<String>>,
+}
+
+impl Reported {
+    fn new(
+        request: &ExportRequest,
+        tracks: &[rbl_export::SourceTrack],
+        report: &rbl_export::ExportReport,
+    ) -> Self {
+        let only = |title: &str, id: Option<u64>| {
+            let mut found = request
+                .tracks
+                .iter()
+                .enumerate()
+                .filter(|(i, t)| {
+                    tracks[*i].title == title && id.is_none_or(|id| t.id.unwrap_or(0) == id)
+                })
+                .map(|(i, _)| i);
+            match (found.next(), found.next()) {
+                (Some(index), None) => Some(index),
+                _ => None,
+            }
+        };
+        let mut update_failed = vec![None; request.tracks.len()];
+        let mut failed = vec![None; request.tracks.len()];
+        let mut unavailable = vec![false; request.tracks.len()];
+        for warning in &report.warnings {
+            if warning.reason == "source-unavailable" {
+                if let Some(index) = only(&warning.title, Some(warning.track_id)) {
+                    unavailable[index] = true;
+                }
+            } else if warning.reason == "update-failed" {
+                if let Some(index) = only(&warning.title, Some(warning.track_id)) {
+                    update_failed[index] =
+                        Some(warning.detail.clone().unwrap_or_else(|| "unknown".into()));
+                }
+            }
+        }
+        for entry in &report.failed {
+            // "title: reason"; the title may itself contain ": ".
+            for (at, _) in entry.match_indices(": ") {
+                if let Some(index) = only(&entry[..at], None) {
+                    failed[index] = Some(entry[at + 2..].to_owned());
+                    break;
+                }
+            }
+        }
+        Self {
+            update_failed,
+            unavailable,
+            failed,
+        }
+    }
+
+    /// The item's status and the warnings that explain it.
+    fn outcome(&self, index: usize, missing: bool, written: bool) -> (TrackStatus, Vec<String>) {
+        if written && missing {
+            (TrackStatus::Kept, vec![KEPT_MISSING.into()])
+        } else if written {
+            match &self.update_failed[index] {
+                Some(why) => (
+                    TrackStatus::Kept,
+                    vec![format!(
+                        "update failed ({why}): the device's copy was kept as it is"
+                    )],
+                ),
+                None => (TrackStatus::Exported, Vec::new()),
+            }
+        } else if missing && self.unavailable[index] {
+            // Found only through rbxport's report: a device copy kept on an
+            // earlier sync is recorded under the device's own path.
+            (TrackStatus::Kept, vec![KEPT_MISSING.into()])
+        } else if missing {
+            (TrackStatus::Skipped, Vec::new())
+        } else {
+            let why = self.failed[index]
+                .as_deref()
+                .unwrap_or("reason not reported");
+            (
+                TrackStatus::Failed,
+                vec![format!("left out of the export: {why}")],
+            )
+        }
+    }
+}
+
 /// What a failed export knows about the request, to name the tracks a
 /// conflict concerns.
 struct ConflictContext<'a> {
@@ -1263,7 +1431,6 @@ struct ConflictContext<'a> {
     /// The tracks handed to rbl-export (request tracks first).
     titles: &'a [rbl_export::SourceTrack],
     manifest: Option<&'a rbl_export::Manifest>,
-    destination: &'a Path,
 }
 
 /// An rbl-export error, with the request tracks a conflict concerns added
@@ -1294,24 +1461,7 @@ fn conflict_error(error: rbl_export::ExportError, ctx: &ConflictContext<'_>) -> 
         })
     };
     details.tracks = match details.reason {
-        R::SourceUnavailable => {
-            let missing: Vec<ConflictTrack> = listed
-                .clone()
-                .filter(|i| entry(*i).is_some() && !ctx.prepared[*i].source.is_file())
-                .map(concerned)
-                .collect();
-            if missing.is_empty() {
-                by_name(&details.name)
-            } else {
-                missing
-            }
-        }
-        R::TrackChangedOnDevice => by_name(&details.name),
-        R::CuesOrGridChangedOnDevice => listed
-            .clone()
-            .filter(|i| entry(*i).is_some_and(|e| analysis_changed_on_device(ctx.destination, e)))
-            .map(concerned)
-            .collect(),
+        R::TrackChangedOnDevice | R::DeviceCuesOnRemovedTrack => by_name(&details.name),
         _ => Vec::new(),
     };
     let text = error.to_string();
