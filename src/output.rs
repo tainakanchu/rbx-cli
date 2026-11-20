@@ -27,29 +27,28 @@ struct Sink {
     lock: Mutex<()>,
 }
 
+impl Sink {
+    fn new(json: bool, quiet: bool, stderr_tty: bool) -> Self {
+        Self {
+            json,
+            quiet,
+            stderr_tty,
+            command: Mutex::new(None),
+            progress_open: AtomicBool::new(false),
+            lock: Mutex::new(()),
+        }
+    }
+}
+
 static SINK: OnceLock<Sink> = OnceLock::new();
 
 fn sink() -> &'static Sink {
-    SINK.get_or_init(|| Sink {
-        json: false,
-        quiet: false,
-        stderr_tty: false,
-        command: Mutex::new(None),
-        progress_open: AtomicBool::new(false),
-        lock: Mutex::new(()),
-    })
+    SINK.get_or_init(|| Sink::new(false, false, false))
 }
 
 /// Configures output once, before anything is printed.
 pub fn init(json: bool, quiet: bool) {
-    let _ = SINK.set(Sink {
-        json,
-        quiet,
-        stderr_tty: std::io::stderr().is_terminal(),
-        command: Mutex::new(None),
-        progress_open: AtomicBool::new(false),
-        lock: Mutex::new(()),
-    });
+    let _ = SINK.set(Sink::new(json, quiet, std::io::stderr().is_terminal()));
 }
 
 #[must_use]
