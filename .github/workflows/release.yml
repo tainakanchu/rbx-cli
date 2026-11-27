@@ -3,7 +3,6 @@ name: Release
 on:
   push:
     tags: ["v*"]
-    branches: ["claude/ecstatic-sagan-iqxvns"]  # TEMP: test run, revert before merge
   # Dry run: builds and smoke-tests every target without creating a release.
   workflow_dispatch:
 
