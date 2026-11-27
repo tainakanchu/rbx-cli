@@ -3,6 +3,8 @@ name: Release
 on:
   push:
     tags: ["v*"]
+  # Dry run: builds and smoke-tests every target without creating a release.
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -25,6 +27,10 @@ jobs:
             os: macos-latest
           - target: x86_64-pc-windows-msvc
             os: windows-latest
+          # Cross-compiled on x64 (MSVC ships the ARM64 toolset); the binary
+          # is smoke-tested on a native Arm runner by `smoke-windows-arm64`.
+          - target: aarch64-pc-windows-msvc
+            os: windows-latest
     runs-on: ${{ matrix.os }}
     env:
       TARGET: ${{ matrix.target }}
@@ -37,7 +43,7 @@ jobs:
         shell: bash
         run: |
           version="$(sed -n 's/^version = "\(.*\)"$/\1/p' Cargo.toml | head -n 1)"
-          if [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
+          if [ "${GITHUB_REF_TYPE}" = "tag" ] && [ "v${version}" != "${GITHUB_REF_NAME}" ]; then
             echo "::error::tag ${GITHUB_REF_NAME} does not match Cargo.toml version ${version}"
             exit 1
           fi
@@ -66,7 +72,7 @@ jobs:
         run: cargo build --locked --release --target "$TARGET"
 
       - name: Smoke test
-        if: matrix.target != 'x86_64-apple-darwin'
+        if: matrix.target != 'x86_64-apple-darwin' && matrix.target != 'aarch64-pc-windows-msvc'
         shell: bash
         run: |
           dir="${CARGO_TARGET_DIR:-target}"
@@ -99,9 +105,34 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  smoke-windows-arm64:
+    name: smoke test (aarch64-pc-windows-msvc, native)
+    needs: build
+    runs-on: windows-11-arm
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: rbx-cli-aarch64-pc-windows-msvc
+          path: dist
+      - name: Run the ARM64 binary
+        shell: pwsh
+        run: |
+          $zip = Get-ChildItem dist/*.zip | Select-Object -First 1
+          Expand-Archive -Path $zip.FullName -DestinationPath x
+          $exe = Get-ChildItem -Recurse x/rbx-cli.exe | Select-Object -First 1
+          & $exe.FullName version --json
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          # Make sure it is a native ARM64 image (PE machine 0xAA64), not x64.
+          $b = [IO.File]::ReadAllBytes($exe.FullName)
+          $pe = [BitConverter]::ToInt32($b, 0x3C)
+          $machine = [BitConverter]::ToUInt16($b, $pe + 4)
+          "machine: 0x{0:X4}" -f $machine
+          if ($machine -ne 0xAA64) { throw "not an ARM64 binary" }
+
   release:
     name: GitHub release
-    needs: build
+    needs: [build, smoke-windows-arm64]
+    if: github.ref_type == 'tag'
     runs-on: ubuntu-latest
     permissions:
       contents: write
