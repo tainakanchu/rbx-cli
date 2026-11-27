@@ -20,7 +20,7 @@ process.
 
 Download an archive for your platform from the
 [releases](https://github.com/tainakanchu/rbx-cli/releases) (Linux x86-64,
-macOS arm64/x86-64, Windows x86-64), check it against `SHA256SUMS`, and put
+macOS arm64/x86-64, Windows x86-64/arm64), check it against `SHA256SUMS`, and put
 `rbx-cli` on your `PATH`. The binaries are self-contained (SQLCipher and
 OpenSSL are compiled in).
 
